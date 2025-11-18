@@ -433,7 +433,7 @@ class AudioProcessor:
         return spectral_power_lft(self.y, fs=self.sr, **kwargs)
 
     # ----------------- FFT -----------------
-    def fft_analysis(self) -> None:
+    def fft_analysis(self, zero_padding: int = 1) -> None:
         """
         STFT com gestÃ£o bÃ¡sica de memÃ³ria e restauro de parÃ¢metros.
         - MantÃ©m fluxo existente.
@@ -452,6 +452,10 @@ class AudioProcessor:
 
         # janela (argumento para librosa)
         win_arg = self._get_window_arg()
+        win_length = len(win_arg)
+
+        # aplica zero padding se necessÃ¡rio
+        n_fft_padded = win_length * zero_padding
 
         # ajuste leve p/ sinais gigantes
         sig_len = len(self.y)
@@ -474,7 +478,8 @@ class AudioProcessor:
             y_norm = _normalize_level(y_work, target_rms_db=-20.0)
             self.S = librosa.stft(
                 y_norm,
-                n_fft=self.n_fft,
+                n_fft=n_fft_padded,
+                win_length=win_length,
                 hop_length=self.hop_length,
                 window=win_arg,
                 center=True,
@@ -484,7 +489,7 @@ class AudioProcessor:
             S_mag = np.abs(self.S)
             # dB de MAGNITUDE para visualizaÃ§Ã£o/thresholds; cÃ¡lculos mÃ©dios serÃ£o em POTÃŠNCIA noutro passo
             self.db_S = librosa.amplitude_to_db(S_mag, ref=np.max)
-            self.freqs = librosa.fft_frequencies(sr=self.sr, n_fft=self.n_fft)
+            self.freqs = librosa.fft_frequencies(sr=self.sr, n_fft=n_fft_padded)
             frame_idx = np.arange(self.S.shape[1])
             self.times = librosa.frames_to_time(frame_idx, sr=self.sr, hop_length=self.hop_length)
 
@@ -600,18 +605,6 @@ class AudioProcessor:
             # db_S = dB de MAGNITUDE (para visualizaÃ§Ãµes/thresholds coerentes com FFT)
             self.db_S = 20.0 * np.log10(np.maximum(lft_mag, 1e-10))
 
-            # (Opcional) Agregado temporal em POTÃŠNCIA, se quiser usar depois:
-            # Escolha de agregaÃ§Ã£o (mean/median/max) aplicada em potÃªncia |S|^2
-            if time_avg not in ('mean', 'median', 'max'):
-                self.logger.warning(f"time_avg invÃ¡lido: {time_avg}; usando 'mean'.")
-                time_avg = 'mean'
-            power_mat = lft_mag ** 2
-            if time_avg == 'mean':
-                self.power_mean = np.mean(power_mat, axis=1)
-            elif time_avg == 'median':
-                self.power_mean = np.median(power_mat, axis=1)
-            else:  # 'max'
-                self.power_mean = np.max(power_mat, axis=1)
 
             # ---------- coherent gain: calcular e guardar universalmente ----------
             cg_val = 1.0
@@ -651,11 +644,19 @@ class AudioProcessor:
         start = time.time()
         complete_list = []
 
+        # seleciona a funÃ§Ã£o de agregaÃ§Ã£o temporal
+        if self.time_avg == 'median':
+            agg_func = np.median
+        elif self.time_avg == 'max':
+            agg_func = np.max
+        else: # default Ã© 'mean'
+            agg_func = np.mean
+
         for i, f in enumerate(self.freqs):
             if f > 0:
                 try:
                     # média temporal em potência linear
-                    pow_lin = np.mean(np.power(10.0, self.db_S[i] / 10.0))
+                    pow_lin = agg_func(np.power(10.0, self.db_S[i] / 10.0))
                     pow_lin = max(pow_lin, 1e-20)          # evita log(0)
                     mag_db = 10.0 * np.log10(pow_lin)      # dB de potência
                     note_str = frequency_to_note_name(f)
@@ -731,11 +732,11 @@ class AudioProcessor:
         self.use_lft = bool(use_lft)
         self.zero_padding = int(zero_padding)
         self.time_avg = str(time_avg)
+        if self.time_avg not in {"mean", "median", "max"}:
+            self.time_avg = "mean"
         if self.use_lft:
             if self.zero_padding < 1:
                 self.zero_padding = 1
-            if self.time_avg not in {"mean", "median", "max"}:
-                self.time_avg = "mean"
 
         # diretÃ³rios
         results_directory = self.results_directory
@@ -858,9 +859,9 @@ class AudioProcessor:
                         self.fft_analysis_lft(zero_padding=zero_padding, time_avg=time_avg)
                     except Exception as e:
                         self.logger.error(f"LFT falhou ({e}); FFT normal.")
-                        self.fft_analysis()
+                        self.fft_analysis(zero_padding=zero_padding)
                 else:
-                    self.fft_analysis()
+                    self.fft_analysis(zero_padding=zero_padding)
 
                 self.generate_complete_list()
 
