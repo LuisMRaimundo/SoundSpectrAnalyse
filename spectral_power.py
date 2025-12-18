@@ -25,9 +25,6 @@ from pathlib import Path
 import soundfile as sf
 from scipy import signal as sp_sig
 
-
-# Restante do código continua igual...
-
 # Configurar logging
 from log_config import configure_root_logger
 configure_root_logger()            # <-- NUNCA duplifica
@@ -703,183 +700,121 @@ def get_window_function(window_type: str, n_samples: int, **kwargs) -> np.ndarra
 
 
 
-# Linha ~160: Otimizar função spectral_power
 def spectral_power(
-    signal: np.ndarray, 
-    n_fft: int = DEFAULT_N_FFT, 
-    hop_length: Optional[int] = None, 
-    window_type: str = 'hann', 
+    signal: np.ndarray,
+    n_fft: int = DEFAULT_N_FFT,
+    hop_length: Optional[int] = None,
+    window_type: str = "hann",
     order: int = 30,
     normalize: bool = False,
     remove_dc: bool = True,
-    window_kwargs: Optional[Dict[str, Any]] = None
+    window_kwargs: Optional[Dict[str, Any]] = None,
 ) -> np.ndarray:
     """
-    Calcula a potência espectral de um sinal usando FFT com norma quadrática
-    e retorna a potência dos primeiros 'order' componentes.
-    Versão aprimorada com melhor tratamento de erros e otimização de memória.
+    Potência espectral média por STFT:
+      - calcula |X|^2 em cada frame (rfft)
+      - faz média temporal em potência linear
+      - converte para dB com 10*log10
 
-    Args:
-        signal: O sinal de áudio (array NumPy 1D).
-        n_fft: Número de pontos FFT (default=8192).
-        hop_length: Tamanho do salto (default=None => n_fft//4).
-        window_type: Tipo de janela a aplicar (e.g., 'hann', 'hamming', etc.)
-        order: Número de componentes espectrais (bins) a retornar.
-        normalize: Se True, normaliza a potência espectral para 0-1.
-        remove_dc: Se True, remove o componente DC (frequência zero).
-        window_kwargs: Parâmetros adicionais para função de janela específica.
-
-    Returns:
-        Array NumPy 1D de tamanho 'order' representando a potência espectral em dB.
-        
-    Raises:
-        ValueError: Se os parâmetros forem inválidos.
+    Nota: esta função devolve potência relativa (não calibrada).
+    Para comparações, use sempre a mesma parametrização (janela/n_fft/hop).
     """
-    # Validação robusta de entrada
+
+    # ---------- validações básicas ----------
     if signal is None:
-        logger.warning("Sinal None fornecido para spectral_power")
-        return np.zeros(order)
-        
-    if len(signal) == 0:
-        logger.warning("Sinal vazio fornecido para spectral_power")
-        return np.zeros(order)
+        return np.zeros(order, dtype=float)
 
-    # Verificar se o sinal contém valores válidos
-    if np.isnan(signal).any() or np.isinf(signal).any():
-        logger.warning("Sinal contém valores NaN ou Inf. Substituindo por zeros.")
-        signal = np.nan_to_num(signal, nan=0.0, posinf=0.0, neginf=0.0)
+    signal = np.asarray(signal, dtype=float)
+    if signal.size == 0:
+        return np.zeros(order, dtype=float)
 
-    # Definir hop_length padrão se não fornecido
-    if hop_length is None:
+    # limpar NaN/Inf
+    signal = np.nan_to_num(signal, nan=0.0, posinf=0.0, neginf=0.0)
+
+    if n_fft <= 0:
+        raise ValueError("n_fft deve ser positivo")
+
+    if hop_length is None or hop_length <= 0:
         hop_length = n_fft // 4
-        
+
     if window_kwargs is None:
         window_kwargs = {}
 
-    # Validar n_fft - garantir que seja uma potência de 2 para eficiência FFT
-    if n_fft <= 0:
-        logger.error(f"Valor inválido para n_fft: {n_fft}")
-        raise ValueError("n_fft deve ser positivo")
-        
-    # Ajustar n_fft para a potência de 2 mais próxima para melhor desempenho FFT
-    n_fft_original = n_fft
-    if n_fft & (n_fft - 1) != 0:  # Verifica se não é potência de 2
-        # Encontrar a próxima potência de 2
+    # ---------- opcional: ajustar n_fft para potência de 2 ----------
+    if n_fft & (n_fft - 1) != 0:
         n_fft = 2 ** (n_fft.bit_length())
-        logger.debug(f"Ajustando n_fft de {n_fft_original} para {n_fft} (próxima potência de 2)")
-        
-    # Validar order
+
+    # bins do rfft (inclui Nyquist)
+    max_bins = (n_fft // 2) + 1
     if order <= 0:
-        logger.error(f"Valor inválido para order: {order}")
         raise ValueError("order deve ser positivo")
-        
-    # Validar order não maior que n_fft/2
-    max_order = n_fft // 2
-    if order > max_order:
-        logger.warning(f"order ({order}) é maior que n_fft/2 ({max_order}). Ajustando para {max_order}.")
-        order = max_order
+    order = min(order, max_bins)
 
-    # Verificar comprimento do sinal e ajustar conforme necessário
-    signal_len = len(signal)
-    if signal_len > 1_000_000 and n_fft > 8192:
-        # Para sinais muito longos, limitar n_fft para economizar memória
-        n_fft = min(n_fft, 8192)
-        max_order = n_fft // 2
-        order = min(order, max_order)
-        logger.info(f"Sinal longo detectado. Ajustando n_fft para {n_fft} e order para {order}")
+    # ---------- janela ----------
+    window = get_window_function(window_type, n_fft, **window_kwargs)
+    window = np.asarray(window, dtype=float)
 
-    # Preencher com zeros o sinal se for mais curto que n_fft
-    if signal_len < n_fft:
-        logger.debug("Sinal mais curto que n_fft. Preenchendo com zeros.")
-        signal = np.pad(signal, (0, n_fft - signal_len), mode='constant')
+    # energia da janela (normalização crucial)
+    window_energy = float(np.sum(window ** 2))
+    if window_energy <= 0.0 or not np.isfinite(window_energy):
+        window_energy = 1.0  # fallback seguro (não deveria acontecer)
 
-    try:
-        # Aplicar a janela selecionada
-        window = get_window_function(window_type, n_fft, **window_kwargs)
-        
-        # Se o sinal for mais longo que n_fft, usar apenas o início
-        # ou considerar segmentação e cálculo de média
-        if signal_len > n_fft:
-            # Para sinais muito longos, considerar múltiplos segmentos
-            num_segments = min(10, signal_len // n_fft)  # Limitar a 10 segmentos
-            
-            if num_segments > 1:
-                logger.debug(f"Processando {num_segments} segmentos e calculando média")
-                fft_results = []
-                
-                for i in range(num_segments):
-                    start = i * n_fft
-                    end = start + n_fft
-                    if end <= signal_len:
-                        segment = signal[start:end]
-                        windowed_segment = segment * window
-                        fft_result = np.fft.fft(windowed_segment, n=n_fft)
-                        fft_magnitude = np.abs(fft_result[:n_fft // 2])
-                        fft_results.append(fft_magnitude)
-                
-                # Calcular média dos resultados FFT
-                fft_magnitude_quadratic = np.mean(fft_results, axis=0) ** 2
-            else:
-                # Usar apenas o início do sinal
-                windowed_signal = signal[:n_fft] * window
-                fft_result = np.fft.fft(windowed_signal, n=n_fft)
-                fft_magnitude_quadratic = np.abs(fft_result[:n_fft // 2]) ** 2
+    # ---------- garantir que há pelo menos 1 frame ----------
+    if signal.size < n_fft:
+        signal = np.pad(signal, (0, n_fft - signal.size), mode="constant")
+
+    # opcional: incluir último frame com padding (mais estável)
+    remainder = (signal.size - n_fft) % hop_length
+    if remainder != 0:
+        pad = hop_length - remainder
+        signal = np.pad(signal, (0, pad), mode="constant")
+
+    # ---------- STFT manual: potência por frame ----------
+    frames_power = []
+    last_start = signal.size - n_fft
+    for start in range(0, last_start + 1, hop_length):
+        frame = signal[start:start + n_fft]
+        # frame.size deve ser n_fft, mas deixo segurança:
+        if frame.size < n_fft:
+            frame = np.pad(frame, (0, n_fft - frame.size), mode="constant")
+
+        frame = frame * window
+        X = np.fft.rfft(frame, n=n_fft)
+
+        # potência normalizada pela energia da janela
+        p = (np.abs(X) ** 2) / window_energy
+        frames_power.append(p)
+
+    if len(frames_power) == 0:
+        return np.zeros(order, dtype=float)
+
+    # ---------- média temporal em potência ----------
+    power_mean = np.mean(np.stack(frames_power, axis=0), axis=0)
+
+    # remover DC
+    if remove_dc and power_mean.size > 0:
+        power_mean[0] = 0.0
+
+    # ---------- converter para dB (potência) ----------
+    eps = 1e-20
+    spectral_power_db = 10.0 * np.log10(np.maximum(power_mean, eps))
+
+    spectral_power_db = np.nan_to_num(
+        spectral_power_db, nan=-200.0, posinf=0.0, neginf=-200.0
+    )
+
+    # normalização opcional (apenas para visualização)
+    if normalize:
+        lo = float(np.min(spectral_power_db))
+        hi = float(np.max(spectral_power_db))
+        if hi > lo:
+            spectral_power_db = (spectral_power_db - lo) / (hi - lo)
         else:
-            # Processar todo o sinal
-            windowed_signal = signal * window
-            fft_result = np.fft.fft(windowed_signal, n=n_fft)
-            fft_magnitude_quadratic = np.abs(fft_result[:n_fft // 2]) ** 2
-        
-        # Remover componente DC se solicitado
-        if remove_dc:
-            fft_magnitude_quadratic[0] = 0.0
+            spectral_power_db = np.zeros_like(spectral_power_db)
 
-        # Converter para potência espectral em dB com tratamento de zeros/valores negativos
-        epsilon = 1e-12  # Valor pequeno para evitar log(0) e valores negativos
-        with np.errstate(divide='ignore', invalid='ignore'):
-            spectral_power_db = 10 * np.log10((1 / n_fft) * (fft_magnitude_quadratic + epsilon))
+    return spectral_power_db[:order]
 
-        # Substituir valores inválidos (-inf, inf, NaN) por um número negativo grande ou padrão seguro
-        spectral_power_db = np.nan_to_num(spectral_power_db, nan=-100.0, posinf=0.0, neginf=-100.0)
-        
-        # Normalizar para 0-1 se solicitado
-        if normalize:
-            min_val = np.min(spectral_power_db)
-            max_val = np.max(spectral_power_db)
-            if max_val > min_val:
-                spectral_power_db = (spectral_power_db - min_val) / (max_val - min_val)
-                logger.debug("Potência espectral normalizada para faixa 0-1")
-            else:
-                logger.warning("Não foi possível normalizar: min_val == max_val")
 
-        # Retornar apenas os primeiros 'order' componentes
-        result = spectral_power_db[:order]
-        logger.debug(f"Potência espectral calculada com {order} componentes")
-        return result
-        
-    except MemoryError as me:
-        logger.error(f"Erro de memória ao calcular potência espectral: {me}")
-        # Estratégia de fallback: Reduzir n_fft drasticamente e tentar novamente
-        try:
-            reduced_n_fft = min(2048, n_fft // 4)
-            reduced_order = min(order, reduced_n_fft // 2)
-            logger.warning(f"Tentando novamente com n_fft reduzido: {reduced_n_fft}, order: {reduced_order}")
-            return spectral_power(
-                signal, reduced_n_fft, hop_length, window_type, 
-                reduced_order, normalize, remove_dc, window_kwargs
-            )
-        except:
-            # Se ainda falhar, retornar array de zeros
-            logger.error("Falha completa no cálculo de potência espectral")
-            return np.zeros(order)
-            
-    except Exception as e:
-        logger.error(f"Erro ao calcular potência espectral: {e}")
-        # Fornecer stack trace para depuração
-        import traceback
-        logger.debug(f"Stack trace: {traceback.format_exc()}")
-        # Retornar array de zeros em caso de falha
-        return np.zeros(order)
 
 
 def compute_spectral_centroid(
@@ -1407,7 +1342,7 @@ def plot_spectrogram(
         
         # Converter para espectrograma (magnitude em dB)
         spectrogram = np.abs(stft)
-        spectrogram_db = 10 * np.log10(np.maximum(spectrogram, 1e-10))
+        spectrogram_db = 20 * np.log10(np.maximum(spectrogram, 1e-10))
         
         # Criar figura
         plt.figure(figsize=figsize)
@@ -1567,7 +1502,7 @@ def plot_spectral_features(
         
         # 3. Espectrograma
         f, t, stft = sp_sig.stft(signal, fs=fs, nperseg=n_fft, window=window_type)
-        spectrogram = 10 * np.log10(np.maximum(np.abs(stft), 1e-10))
+        spectrogram = 20 * np.log10(np.maximum(np.abs(stft), 1e-10))
         
         im = axs[1, 0].pcolormesh(t, f, spectrogram, cmap='viridis', shading='gouraud')
         axs[1, 0].set_title('Espectrograma')

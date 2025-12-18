@@ -298,6 +298,14 @@ class AudioProcessor:
         self.db_S: Optional[np.ndarray] = None
         self.freqs: Optional[np.ndarray] = None
         self.times: Optional[np.ndarray] = None
+        # --- flags de coerência de amplitude ---
+        self._filtered_amp_corrected = False
+        self._harmonic_amp_corrected = False
+        self._complete_amp_corrected = False
+        self._harmonic_amp_corrected = False
+
+
+
 
         # DataFrames
         self.complete_list_df: Optional[pd.DataFrame] = None
@@ -636,41 +644,51 @@ class AudioProcessor:
     # ----------------- lista completa -----------------
     def generate_complete_list(self) -> None:
         if self.db_S is None or self.freqs is None:
-            raise ValueError(
-                "Execute fft_analysis() ou fft_analysis_lft() antes de generate_complete_list()."
-            )
+            raise ValueError("Execute fft_analysis() ou fft_analysis_lft() antes de generate_complete_list().")
 
         self.logger.info("Gerando lista completa de parciais")
         start = time.time()
         complete_list = []
 
-        # seleciona a funÃ§Ã£o de agregaÃ§Ã£o temporal
-        if self.time_avg == 'median':
-            agg_func = np.median
-        elif self.time_avg == 'max':
-            agg_func = np.max
-        else: # default Ã© 'mean'
-            agg_func = np.mean
+        # função de agregação temporal
+        agg_func = {"median": np.median, "max": np.max}.get(self.time_avg, np.mean)
+
+        # garantir que self.db_S é array NumPy
+        db_S = np.asarray(self.db_S, dtype=float)
 
         for i, f in enumerate(self.freqs):
-            if f > 0:
-                try:
-                    # média temporal em potência linear
-                    pow_lin = agg_func(np.power(10.0, self.db_S[i] / 10.0))
-                    pow_lin = max(pow_lin, 1e-20)          # evita log(0)
-                    mag_db = 10.0 * np.log10(pow_lin)      # dB de potência
-                    note_str = frequency_to_note_name(f)
-                    complete_list.append((f, mag_db, note_str))
-                except Exception:
-                    continue
+            if f <= 0:
+                continue
+
+            try:
+                # dB de amplitude -> amplitude linear
+                amp_t = np.power(10.0, db_S[i] / 20.0)
+
+                # limpeza numérica
+                amp_t = np.nan_to_num(amp_t, nan=0.0, posinf=0.0, neginf=0.0)
+
+                # agregação temporal (mean/median/max)
+                amp_lin = float(agg_func(amp_t))
+
+                # evitar log(0)
+                amp_lin = max(amp_lin, 1e-20)
+
+                # amplitude -> dB de amplitude
+                mag_db = 20.0 * np.log10(amp_lin)
+
+                note_str = frequency_to_note_name(f)
+                complete_list.append((f, mag_db, note_str))
+
+            except Exception as e:
+                self.logger.warning(f"Falha em generate_complete_list (i={i}, f={f:.2f} Hz): {e}")
+                continue
 
         self.complete_list_df = pd.DataFrame(
             complete_list,
-            columns=['Frequency (Hz)', 'Magnitude (dB)', 'Note']
+            columns=["Frequency (Hz)", "Magnitude (dB)", "Note"]
         )
-        self.logger.info(
-            f"Lista completa: {len(complete_list)} parciais em {time.time()-start:.3f}s"
-        )
+
+        self.logger.info(f"Lista completa: {len(complete_list)} parciais em {time.time()-start:.3f}s")
 
     # ----------------- pipeline principal (GUI) -----------------
     def apply_filters_and_generate_data(
@@ -846,41 +864,60 @@ class AudioProcessor:
         zero_padding: int = 1,
         time_avg: str = 'mean'
     ) -> None:
+        import time
+        import gc  # Importante para limpar memória em loops grandes
+
         start = time.time()
+        
         for i, (y, sr, note, file_path) in enumerate(self.audio_data, 1):
             try:
+                # 1. Notificar progresso na interface
                 if progress_callback:
                     progress_callback(i, len(self.audio_data), note)
+                
+                # 2. Carregar dados para o estado da classe
                 self.y, self.sr = y, sr
                 self._reset_metrics()
 
+                # 3. Executar Análise (FFT ou LFT)
                 if use_lft:
                     try:
                         self.fft_analysis_lft(zero_padding=zero_padding, time_avg=time_avg)
                     except Exception as e:
-                        self.logger.error(f"LFT falhou ({e}); FFT normal.")
+                        self.logger.error(f"LFT falhou ({e}); a usar FFT normal.")
                         self.fft_analysis(zero_padding=zero_padding)
                 else:
                     self.fft_analysis(zero_padding=zero_padding)
 
+                # 4. Gerar lista de parciais
                 self.generate_complete_list()
 
+                # 5. Processar Harmónicos e Calcular Métricas
+                # (É AQUI DENTRO que a correção Log/Linear que fizemos vai atuar)
                 self._process_filtered_and_harmonic_data(
                     freq_min, freq_max, db_min, db_max, tolerance, note,
                     use_lft=use_lft, zero_padding=zero_padding, time_avg=time_avg
                 )
 
+                # 6. Guardar Resultados
                 out_folder = results_directory / note
                 out_folder.mkdir(parents=True, exist_ok=True)
+                
                 self.save_results(out_folder, note, use_lft=use_lft)
-
                 self._export_data_for_visualization(note, out_folder, interactive_dir, export_data_format)
 
                 self.logger.info(f"{i}/{len(self.audio_data)} processado: {note}")
+
+                # 7. Limpeza de Memória (Crucial para batch processing)
+                # Liberta a memória gráfica do Matplotlib e arrays grandes
+                plt.close('all') 
+                gc.collect()
+
             except Exception as e:
                 self.logger.error(f"Erro ao processar {note}: {e}")
                 continue
-        self.logger.info(f"Processamento concluÃ­do em {time.time()-start:.2f}s")
+        
+        self.logger.info(f"Processamento concluído em {time.time()-start:.2f}s")
 
     def _process_filtered_and_harmonic_data(
         self,
@@ -929,6 +966,9 @@ class AudioProcessor:
             cg = 1.0
         
         fdf['Amplitude'] = amps / cg # APLICAR CORREÇÃO
+        self._filtered_amp_corrected = True  # filtered_list_df já está corrigida por ganho coerente
+
+
     
         # Limpeza de valores extremos
         fdf.replace([np.inf, -np.inf], np.nan, inplace=True)
@@ -1169,27 +1209,38 @@ class AudioProcessor:
                 self._set_default_metrics()
                 return
 
-            # ------------------- amplitudes harmÃ³nicas -------------------
-            if "Amplitude" in self.harmonic_list_df.columns:
-                harmonic_amps = self.harmonic_list_df["Amplitude"].to_numpy(float)
-            elif "Magnitude (dB)" in self.harmonic_list_df.columns:
-                db_vals = self.harmonic_list_df["Magnitude (dB)"].to_numpy(float)
-                harmonic_amps = np.power(10.0, db_vals / 20.0)
-                try:
-                    self.harmonic_list_df["Amplitude"] = harmonic_amps
-                except Exception:
-                    pass
-            else:
-                harmonic_amps = np.asarray([], dtype=float)
+            # ------------------- amplitudes harmónicas -------------------
+            harmonic_amps = np.asarray([], dtype=float)
 
-            # correÃ§Ã£o de ganho coerente (amplitude absoluta; sem normalizar por A1/N)
-            try:
-                cg = _coherent_gain_local(getattr(self, "window", "hann"),
-                                          int(getattr(self, "n_fft", 4096)))
-                if cg > 0:
+            if self.harmonic_list_df is not None and not self.harmonic_list_df.empty:
+
+                if "Amplitude" in self.harmonic_list_df.columns:
+                    harmonic_amps = self.harmonic_list_df["Amplitude"].to_numpy(dtype=float)
+
+                elif "Magnitude (dB)" in self.harmonic_list_df.columns:
+                    db_vals = self.harmonic_list_df["Magnitude (dB)"].to_numpy(dtype=float)
+
+                    # dB -> amplitude linear (referência A_ref = 1)
+                    harmonic_amps = np.power(10.0, db_vals / 20.0)
+
+                    # Guardar também no DF (útil para auditoria/export)
+                    self.harmonic_list_df["Amplitude"] = harmonic_amps
+
+                # Limpeza numérica: remove NaN/inf e força não-negatividade
+                harmonic_amps = np.nan_to_num(harmonic_amps, nan=0.0, posinf=0.0, neginf=0.0)
+                harmonic_amps = np.maximum(harmonic_amps, 0.0)
+
+                # Se (e só se) a convenção do seu pipeline for trabalhar com amplitudes "corrigidas pela janela",
+                # aplique aqui exactamente uma vez. Caso contrário, comente este bloco.
+                cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
+                if cg > 0.0 and not getattr(self, "_harmonic_amp_corrected", False):
                     harmonic_amps = harmonic_amps / cg
-            except Exception:
-                pass
+                    self.harmonic_list_df["Amplitude"] = harmonic_amps
+                    self._harmonic_amp_corrected = True
+
+
+            # O bloco de correção redundante de ganho coerente foi removido aqui.
+            # (harmonic_amps já contém valores corrigidos vindos do DataFrame)
 
             # ------------------- Density Metric (absoluta) -------------------
             self.density_metric_value = float(
@@ -1201,118 +1252,119 @@ class AudioProcessor:
 
             # ------------------- Spectral Density Metric (potÃªncia; sem fallback) -------------------
             self.spectral_density_metric_value = 0.0
+
+            camp = None
             if self.complete_list_df is not None and not self.complete_list_df.empty:
+
                 if "Amplitude" in self.complete_list_df.columns:
-                    camp = self.complete_list_df["Amplitude"].to_numpy(float)
+                    camp = self.complete_list_df["Amplitude"].to_numpy(dtype=float)
+
                 elif "Magnitude (dB)" in self.complete_list_df.columns:
-                    camp = np.power(10.0, self.complete_list_df["Magnitude (dB)"].to_numpy(float) / 20.0)
+                    db_vals = self.complete_list_df["Magnitude (dB)"].to_numpy(dtype=float)
+
+                    # dB -> amplitude linear (A_ref = 1)
+                    camp = np.power(10.0, db_vals / 20.0)
+
+                    # aplicar ganho coerente (se e só se a sua convenção for "amplitude corrigida pela janela")
                     cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
-                    camp = camp / (cg if cg > 0.0 else 1.0)
+                    if cg > 0.0 and not getattr(self, "_complete_amp_corrected", False):
+                        camp = camp / cg
+                        self._complete_amp_corrected = True
+
+                    # guardar uma vez
                     self.complete_list_df["Amplitude"] = camp
 
-                    cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
-                    camp = camp / (cg if cg > 0.0 else 1.0)
-                    self.complete_list_df["Amplitude"] = camp
-
-                    cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
-                    camp = camp / (cg if cg > 0.0 else 1.0)
-                    self.complete_list_df["Amplitude"] = camp
-
-                    cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
-                    camp = camp / (cg if cg > 0.0 else 1.0)
-                    self.complete_list_df["Amplitude"] = camp
-
-                    cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
-                    camp = camp / (cg if cg > 0.0 else 1.0)
-                    self.complete_list_df["Amplitude"] = camp
-
-                    cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
-                    camp = camp / (cg if cg > 0.0 else 1.0)
-                    self.complete_list_df["Amplitude"] = camp
-
-                    cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
-                    camp = camp / (cg if cg > 0.0 else 1.0)
-                    self.complete_list_df["Amplitude"] = camp
-
-                    cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
-                    camp = camp / (cg if cg > 0.0 else 1.0)
-                    self.complete_list_df["Amplitude"] = camp
-
+                # limpeza numérica (aplica-se a ambos os ramos)
+                if camp is not None:
+                    camp = np.nan_to_num(camp, nan=0.0, posinf=0.0, neginf=0.0)
+                    camp = np.maximum(camp, 0.0)
+                    # manter DF coerente, se existir coluna Amplitude
                     try:
                         self.complete_list_df["Amplitude"] = camp
                     except Exception:
                         pass
-                else:
-                    camp = None
 
+                #
                 if camp is not None and camp.size > 0:
-                    try:
-                        cg = _coherent_gain_local(getattr(self, "window", "hann"),
-                                                  int(getattr(self, "n_fft", 4096)))
-                        if cg > 0:
-                            camp = camp / cg
-                    except Exception:
-                        pass
-                    cpow = camp ** 2  # potÃªncia
+                    # O bloco de correção redundante de ganho coerente foi removido aqui.
+                    # (camp já contém valores corrigidos vindos do complete_list_df)
+    
+                    cpow = camp ** 2  # potência
                     self.spectral_density_metric_value = float(
                         apply_density_metric(cpow, weight_function="linear", normalize=False)
                     )
-            # --- NOVO: mÃ©tricas de densidade (R_norm, P_norm, D_agn, D_harm) ---
-                    try:
-                        if self.complete_list_df is not None and not self.complete_list_df.empty:
-                            if "Frequency (Hz)" in self.complete_list_df.columns:
-                                f_hz = pd.to_numeric(self.complete_list_df["Frequency (Hz)"], errors="coerce").to_numpy(float)
-                            else:
-                                f_hz = None
+            # --- NOVO: métricas de densidade (R_norm, P_norm, D_agn, D_harm) ---
+            try:
+                if self.complete_list_df is not None and not self.complete_list_df.empty:
+                    if "Frequency (Hz)" in self.complete_list_df.columns:
+                        f_hz = pd.to_numeric(self.complete_list_df["Frequency (Hz)"], errors="coerce").to_numpy(float)
+                    else:
+                        f_hz = None
 
-                            if "Amplitude" in self.complete_list_df.columns:
-                                a_lin = pd.to_numeric(self.complete_list_df["Amplitude"], errors="coerce").to_numpy(float)
-                            elif "Magnitude (dB)" in self.complete_list_df.columns:
-                                # Se estes dB forem de amplitude, converte para potÃªncia: (10**(dB/20))**2
-                                a_lin = np.power(10.0, pd.to_numeric(self.complete_list_df["Magnitude (dB)"], errors="coerce").to_numpy(float) / 20.0) ** 2
-                            else:
-                                a_lin = None
+                    if "Amplitude" in self.complete_list_df.columns:
+                        a_lin = pd.to_numeric(self.complete_list_df["Amplitude"], errors="coerce").to_numpy(float)
+                    elif "Magnitude (dB)" in self.complete_list_df.columns:
+                        # Se estes dB forem de amplitude, converte para potência: (10**(dB/20))**2
+                        a_lin = np.power(10.0, pd.to_numeric(self.complete_list_df["Magnitude (dB)"], errors="coerce").to_numpy(float) / 20.0) ** 2
+                    else:
+                        a_lin = None
 
-                            if f_hz is not None and a_lin is not None:
-                                # threshold relativo a -40 dB (Ëœ 0.01 em amplitude; 1e-4 em potÃªncia)
-                                if "Magnitude (dB)" in self.complete_list_df.columns:
-                                    mask = self.complete_list_df["Magnitude (dB)"] >= (self.complete_list_df["Magnitude (dB)"].max() - 40.0)
-                                    f_hz = f_hz[mask.to_numpy()]
-                                    a_lin = a_lin[mask.to_numpy()]
+                    if f_hz is not None and a_lin is not None:
+                        # threshold relativo a -40 dB (~ 0.01 em amplitude; 1e-4 em potência)
+                        if "Magnitude (dB)" in self.complete_list_df.columns:
+                            mask = self.complete_list_df["Magnitude (dB)"] >= (self.complete_list_df["Magnitude (dB)"].max() - 40.0)
+                            f_hz = f_hz[mask.to_numpy()]
+                            a_lin = a_lin[mask.to_numpy()]
 
-                                # f0 se tiveres calculado anteriormente; senÃ£o, usa None
-                                f0_est = None
-                                try:
-                                    if self.harmonic_list_df is not None and not self.harmonic_list_df.empty:
-                                        f0_est = float(self.harmonic_list_df.nsmallest(1, "Frequency (Hz)")["Frequency (Hz)"].iloc[0])
-                                except Exception:
-                                    f0_est = None
+                        # f0 se tiveres calculado anteriormente; senão, usa None
+                        f0_est = None
+                        try:
+                            if self.harmonic_list_df is not None and not self.harmonic_list_df.empty:
+                                f0_est = float(self.harmonic_list_df.nsmallest(1, "Frequency (Hz)")["Frequency (Hz)"].iloc[0])
+                        except Exception:
+                            f0_est = None
 
-                                from density import spectral_density
+                        from density import spectral_density
+                        import numpy as np
 
-                                dens = spectral_density(
-                                    f_hz, a_lin,
-                                    f0_hz=f0_est,
-                                    proximity_axis="bark",
-                                    sigma=0.5, bark_window=8.0,
-                                    max_peaks_per_band=4,
-                                    weight_r=0.45, weight_p=0.55,
-                                    lambda_low=0.35,  # injeta â€œpesoâ€ de graves
-                                    low_bark_cut=8,
-                                )
-                                # Exporta: D_peso (novo), alÃ©m de R_norm/P_norm/D_agn
+                        # --- CORREÇÃO: CÁLCULO DINÂMICO DOS PESOS ---
+                        # Lê os valores definidos na interface em vez de usar fixos
+                        h_weight = float(getattr(self, "harmonic_weight", 0.95))
+                        w_func = str(getattr(self, "weight_function", "linear")).lower()
 
+                        if w_func == "log":
+                            # Constant Power / Equal Power (Seno/Cosseno)
+                            theta = h_weight * (np.pi / 2)
+                            calc_wp = np.sin(theta)  # Peso Harmónico (Pitch)
+                            calc_wr = np.cos(theta)  # Peso Inharmónico (Roughness)
+                        else:
+                            # Linear
+                            calc_wp = h_weight
+                            calc_wr = 1.0 - h_weight
+                        # --------------------------------------------
 
+                        dens = spectral_density(
+                            f_hz, a_lin,
+                            f0_hz=f0_est,
+                            proximity_axis="bark",
+                            sigma=0.5, bark_window=8.0,
+                            max_peaks_per_band=4,
+                            weight_r=calc_wr, weight_p=calc_wp, # <--- USAR VARIÁVEIS CALCULADAS
+                            lambda_low=0.35,  # injeta “peso” de graves
+                            low_bark_cut=8,
+                        )
+                        # Exporta: D_peso (novo), além de R_norm/P_norm/D_agn
 
-                                # guardar para exportaÃ§Ã£o
-                                self.R_norm = float(dens["R_norm"])
-                                self.P_norm = float(dens["P_norm"])
-                                self.D_agn  = float(dens["D_agn"])
-                                self.D_harm = (None if dens["D_harm"] is None else float(dens["D_harm"]))
-                    except Exception as _e:
-                        self.R_norm = self.P_norm = self.D_agn = 0.0
-                        self.D_harm = None
-                    # --- FIM NOVO ---
+                        # guardar para exportação
+                        self.R_norm = float(dens["R_norm"])
+                        self.P_norm = float(dens["P_norm"])
+                        self.D_agn  = float(dens["D_agn"])
+                        self.D_harm = (None if dens["D_harm"] is None else float(dens["D_harm"]))
+
+            except Exception as _e:
+                self.R_norm = self.P_norm = self.D_agn = 0.0
+                self.D_harm = None
+            # --- FIM NOVO ---
 
             # ------------------- Filtered Density (absoluta; sem contagem) -------------------
             self.filtered_density_metric_value = 0.0
@@ -1329,13 +1381,7 @@ class AudioProcessor:
                     famps = None
 
                 if famps is not None and famps.size > 0:
-                    try:
-                        cg = _coherent_gain_local(getattr(self, "window", "hann"),
-                                                  int(getattr(self, "n_fft", 4096)))
-                        if cg > 0:
-                            famps = famps / cg
-                    except Exception:
-                        pass
+                    
                     self.filtered_density_metric_value = float(
                         apply_density_metric(famps, self.weight_function, normalize=False)
                     )
@@ -1404,7 +1450,19 @@ class AudioProcessor:
 
             # Cálculo Final da Total Metric (mantém-se a multiplicação por 10.0 se desejar a escala 0-10)
             self.total_metric_value = (wD*norm_density + wS*norm_spectral + wE*norm_entropy + wC*norm_combined) * 10.0
+            
 
+            # Dynamic Density Score (Acoustic Momentum): Structure (CDM) * Energy (Log FDM)
+            try:
+                import math
+                if self.filtered_density_metric_value > 0:
+                    self.dynamic_density_score = self.combined_density_metric_value * math.log10(self.filtered_density_metric_value)
+                else:
+                    self.dynamic_density_score = 0.0
+            except Exception:
+                self.dynamic_density_score = 0.0
+
+            # --------------------
             # ------------------- DissonÃ¢ncia -------------------
             if getattr(self, "dissonance_enabled", False):
                 self.calculate_dissonance_metrics()
@@ -1468,26 +1526,30 @@ class AudioProcessor:
                 return
 
             # ---------- amplitudes harmónicas (DM) ----------
-            if "Amplitude" in self.harmonic_list_df.columns:
-                harmonic_amps = self.harmonic_list_df["Amplitude"].to_numpy(float)
-            elif "Magnitude (dB)" in self.harmonic_list_df.columns:
-                db_vals = self.harmonic_list_df["Magnitude (dB)"].to_numpy(float)
-                harmonic_amps = np.power(10.0, db_vals / 20.0)
-                try:
-                    self.harmonic_list_df["Amplitude"] = harmonic_amps
-                except Exception:
-                    pass
-            else:
-                harmonic_amps = np.asarray([], dtype=float)
+            harmonic_amps = np.asarray([], dtype=float)
 
-            # Correção de ganho coerente (escala absoluta) [7]
-            try:
-                cg = _coherent_gain_local(getattr(self, "window", "hann"),
-                                          int(getattr(self, "n_fft", 4096)))
-                if cg > 0:
-                    harmonic_amps = harmonic_amps / cg
-            except Exception:
-                pass
+            if self.harmonic_list_df is not None and not self.harmonic_list_df.empty:
+
+                if "Amplitude" in self.harmonic_list_df.columns:
+                    harmonic_amps = self.harmonic_list_df["Amplitude"].to_numpy(dtype=float)
+
+                elif "Magnitude (dB)" in self.harmonic_list_df.columns:
+                    db_vals = self.harmonic_list_df["Magnitude (dB)"].to_numpy(dtype=float)
+
+                    # dB de amplitude → amplitude linear (A_ref = 1)
+                    harmonic_amps = np.power(10.0, db_vals / 20.0)
+
+                    # guardar (sem try/except: se falhar, é erro estrutural do DF)
+                    self.harmonic_list_df["Amplitude"] = harmonic_amps
+
+                # limpeza numérica
+                harmonic_amps = np.nan_to_num(harmonic_amps, nan=0.0, posinf=0.0, neginf=0.0)
+                harmonic_amps = np.maximum(harmonic_amps, 0.0)
+
+                # IMPORTANTÍSSIMO:
+                # NÃO aplique aqui /cg se a sua harmonic_list_df vem de filtered_list_df já corrigida.
+                # A correcção por cg deve existir UMA vez no pipeline, tipicamente quando cria filtered_list_df["Amplitude"].
+
 
             # ---------- Density Metric (absoluta; sem normalize) ----------
             if harmonic_amps.size > 0:
@@ -1604,7 +1666,19 @@ class AudioProcessor:
 
             # Cálculo Final da Total Metric (escala 0-10) [2, 13]
             self.total_metric_value = (wD * norm_density + wS * norm_spectral + wE * norm_entropy + wC * norm_combined) * 10.0
+            
+            # Dynamic Density Score (Acoustic Momentum)
+            try:
+                import math
+                if self.filtered_density_metric_value > 0:
+                    self.dynamic_density_score = self.combined_density_metric_value * math.log10(self.filtered_density_metric_value)
+                else:
+                    self.dynamic_density_score = 0.0
+            except Exception:
+                self.dynamic_density_score = 0.0
 
+
+            # ---------------------------------
             # ---------- Dissonância ----------
             if getattr(self, "dissonance_enabled", False):
                 self.calculate_dissonance_metrics()
@@ -1654,9 +1728,7 @@ class AudioProcessor:
                     self._set_default_metrics()
                     return
 
-            amps = self.harmonic_list_df["Amplitude"].to_numpy(float)
-            cg = _cg()
-            amps_c = amps / cg  # correÃ§Ã£o de janela (escala absoluta)
+            amps_c = self.harmonic_list_df["Amplitude"].to_numpy(float)
 
             # ---- Density Metric (absoluta; sem normalize; sem *10) ----
             if self.density_metric_value is None:
@@ -1675,8 +1747,7 @@ class AudioProcessor:
                                 10.0, self.filtered_list_df["Magnitude (dB)"].to_numpy(float) / 20.0
                             )
                     if "Amplitude" in self.filtered_list_df.columns:
-                        famps = self.filtered_list_df["Amplitude"].to_numpy(float)
-                        famps_c = famps / cg
+                        famps_c = self.filtered_list_df["Amplitude"].to_numpy(float)
                         self.filtered_density_metric_value = float(
                             apply_density_metric(famps_c, self.weight_function, normalize=False)
                         )
@@ -1721,21 +1792,40 @@ class AudioProcessor:
         if not self.dissonance_enabled or self.harmonic_list_df is None or self.harmonic_list_df.empty:
             return
         try:
+            # Garantir que a coluna Amplitude existe
             if 'Amplitude' not in self.harmonic_list_df.columns:
                 self.harmonic_list_df['Amplitude'] = np.power(10.0, self.harmonic_list_df['Magnitude (dB)'] / 20.0)
 
-            partials = [(row['Frequency (Hz)'], row['Amplitude']) for _, row in self.harmonic_list_df.iterrows()]
+            # --- OTIMIZAÇÃO CRÍTICA (Limitador de Picos) ---
+            # Para notas muito graves (Contrafagote), a janela gigante deteta milhares de parciais.
+            # Calcular dissonância com 6000 parciais bloqueia o CPU (milhões de operações).
+            # Limitamos aqui aos 50 parciais mais fortes, que contêm 99% da energia percetível.
+            
+            df_calc = self.harmonic_list_df.copy() # Cópia para não estragar dados originais
+            
+            if len(df_calc) > 80:
+                df_calc = df_calc.nlargest(80, 'Amplitude')
+            # -----------------------------------------------
+
+            # Gerar lista de tuplos baseada APENAS nestes 50 parciais filtrados
+            partials = [(row['Frequency (Hz)'], row['Amplitude']) for _, row in df_calc.iterrows()]
+            
+            # Decidir quais modelos calcular
             models_to_calc = list_available_models() if self.dissonance_compare_models else [self.dissonance_model]
 
             for mname in models_to_calc:
                 try:
                     model = get_dissonance_model(mname)
-                    # cÃ¡lculo padrÃ£o
-                    self.dissonance_values[mname] = model.calculate_dissonance_metric(self.harmonic_list_df)
+                    
+                    # 1. Cálculo do valor escalar (usando o DataFrame reduzido)
+                    self.dissonance_values[mname] = model.calculate_dissonance_metric(df_calc)
 
+                    # 2. Cálculo da Curva (se ativado)
                     if self.dissonance_curve_enabled:
+                        # Usa a lista 'partials' que já está reduzida a 50 itens
                         self.dissonance_curves[mname] = model.calculate_dissonance_curve(partials, 1.0, 2.0, 200)
 
+                        # 3. Escalas e Mínimos Locais
                         if self.dissonance_scale_enabled and self.dissonance_curves[mname] is not None:
                             self.dissonance_scales[mname] = model.find_local_minima(self.dissonance_curves[mname])
                             if 1.0 not in self.dissonance_scales[mname]:
@@ -1745,17 +1835,19 @@ class AudioProcessor:
                             self.dissonance_scales[mname] = sorted(self.dissonance_scales[mname])
 
                 except Exception as e:
-                    self.logger.error(f"DissonÃ¢ncia {mname} falhou: {e}")
+                    self.logger.error(f"Dissonância {mname} falhou: {e}")
                     self.dissonance_values[mname] = None
                     self.dissonance_curves[mname] = None
                     self.dissonance_scales[mname] = None
 
         except Exception as e:
             self.logger.error(f"Erro em calculate_dissonance_metrics: {e}")
-            for m in self.dissonance_values:
-                self.dissonance_values[m] = None
-                self.dissonance_curves[m] = None
-                self.dissonance_scales[m] = None
+            # Limpeza de segurança
+            if hasattr(self, 'dissonance_values') and self.dissonance_values:
+                for m in self.dissonance_values:
+                    self.dissonance_values[m] = None
+                    self.dissonance_curves[m] = None
+                    self.dissonance_scales[m] = None
 
     # ----------------- compilar mÃ©tricas / exportaÃ§Ãµes -----------------
     def _compile_metrics(self, results_directory: Path) -> None:
@@ -2164,23 +2256,24 @@ class AudioProcessor:
             return None
 
     def _save_spectral_data_to_excel(self, writer: pd.ExcelWriter, note: str) -> None:
+        import numpy as np
+        import pandas as pd
+        
         log = self.logger
         try:
             # ===== 1. ESPECTROS (DADOS BRUTOS) =====
             def _ensure_amp_column(df: pd.DataFrame) -> pd.DataFrame:
-            # CORREÇÃO CRÍTICA: Importação local para garantir o escopo de np e pd
                 if df is None or df.empty:
                     return df
                 if "Amplitude" not in df.columns:
                     if "Magnitude (dB)" in df.columns:
                         df = df.copy()
-                        # Fórmula física correta: A = 10^(dB / 20) [3, 6-10]
+                        # Fórmula física correta: A = 10^(dB / 20)
                         df["Amplitude"] = np.power(10.0, pd.to_numeric(df["Magnitude (dB)"], errors="coerce").fillna(-120.0) / 20.0)
                 return df
 
             if isinstance(self.complete_list_df, pd.DataFrame) and not self.complete_list_df.empty:
                 df_complete = _ensure_amp_column(self.complete_list_df)
-                # Seleção de colunas robusta [3, 4]
                 cols = [c for c in ["Frequency (Hz)", "Magnitude (dB)", "Amplitude", "Note"] if c in df_complete.columns]
                 (df_complete[cols] if cols else df_complete).to_excel(writer, sheet_name="Complete Spectrum", index=False)
                 log.debug(f"Espectro completo salvo: {len(df_complete)}")
@@ -2195,68 +2288,80 @@ class AudioProcessor:
                 df_harm = _ensure_amp_column(self.harmonic_list_df)
                 cols = [c for c in ["Harmonic Number", "Frequency (Hz)", "Magnitude (dB)", "Amplitude", "Note"] if c in df_harm.columns]
                 (df_harm[cols] if cols else df_harm).to_excel(writer, sheet_name="Harmonic Spectrum", index=False)
-                log.debug(f"Espectro harmÃ´nico salvo: {len(df_harm)}")
+                log.debug(f"Espectro harmónico salvo: {len(df_harm)}")
 
-            # ===== 2. GARANTIR MÃ‰TRICAS =====
+            # ===== 2. GARANTIR MÉTRICAS =====
             try:
                 self._ensure_all_metrics_calculated()
             except Exception as e:
                 log.warning(f"_ensure_all_metrics_calculated falhou: {e}")
                 self._set_default_metrics()
 
-            # ===== 3. MÃ‰TRICAS CONSOLIDADAS =====
-            # hop length robusto
-            hl = (getattr(self, "hop_length", None) 
-                  or int(getattr(self, "n_fft", 4096)) // 2)
-
-            # coherent gain robusto
-            _cg_fn = (globals().get("_coherent_gain") 
-                      or globals().get("_coherent_gain_local"))
+            # ===== 3. MÉTRICAS CONSOLIDADAS =====
+            hl = (getattr(self, "hop_length", None) or int(getattr(self, "n_fft", 4096)) // 2)
+            
+            # Helper de Coherent Gain
+            _cg_fn = (globals().get("_coherent_gain") or globals().get("_coherent_gain_local"))
             try:
-                cg_val = float(_cg_fn(getattr(self, "window", "hann"),
-                                      int(getattr(self, "n_fft", 4096)))) if _cg_fn else 1.0
+                cg_val = float(_cg_fn(getattr(self, "window", "hann"), int(getattr(self, "n_fft", 4096)))) if _cg_fn else 1.0
             except Exception:
                 cg_val = 1.0
 
-      
+            # --- CORREÇÃO: RECALCULAR PESOS PARA O RELATÓRIO ---
+            # Para o Excel mostrar os valores reais usados no cálculo
+            _hw = float(getattr(self, "harmonic_weight", 0.95))
+            _wf = str(getattr(self, "weight_function", "linear")).lower()
+            
+            if _wf == "log":
+                _theta = _hw * (np.pi / 2)
+                _final_wp = np.sin(_theta)
+                _final_wr = np.cos(_theta)
+            else:
+                _final_wp = _hw
+                _final_wr = 1.0 - _hw
+            # ----------------------------------------------------
+
             main_metrics = {
                 "Note": note,
                 "Analysis Type": ("LFT" if getattr(self, "use_lft", False) else "FFT"),
 
-                # MÃ©tricas (valores absolutos; sem normalizaÃ§Ã£o por A1/N)
+                # Métricas
                 "Density Metric": float(getattr(self, "density_metric_value", 0.0) or 0.0),
                 "Filtered Density Metric": float(getattr(self, "filtered_density_metric_value", 0.0) or 0.0),
+                "Dynamic Density Score": float(getattr(self, "dynamic_density_score", 0.0) or 0.0),
                 "Spectral Entropy": float(getattr(self, "entropy_spectral_value", 0.0) or 0.0),
                 "Combined Density Metric": float(getattr(self, "combined_density_metric_value", 0.0) or 0.0),
                 "Total Metric": float(getattr(self, "total_metric_value", 0.0) or 0.0),
                 "Spectral Density Metric": float(getattr(self, "spectral_density_metric_value", 0.0) or 0.0),
 
-                # NOVO â€” mÃ©tricas de densidade propostas (0â€“1)
+                # NOVAS Métricas
                 "R_norm": float(getattr(self, "R_norm", 0.0) or 0.0),
                 "P_norm": float(getattr(self, "P_norm", 0.0) or 0.0),
                 "D_agn":  float(getattr(self, "D_agn", 0.0) or 0.0),
                 "D_harm": (np.nan if getattr(self, "D_harm", None) is None else float(self.D_harm)),
 
-                # ParÃ¢metros/ponderaÃ§Ãµes
+                # Parâmetros
                 "Weight Function": str(getattr(self, "weight_function", "linear")),
                 "Harmonic Weight (a)": float(getattr(self, "harmonic_weight", 0.5)),
-                "Inharmonic Weight (ÃŸ)": float(getattr(self, "inharmonic_weight", 0.5)),
+                "Inharmonic Weight (ß)": float(getattr(self, "inharmonic_weight", 0.5)),
 
-                # Metadados tÃ©cnicos para reprodutibilidade
+                # Metadados
                 "Window": str(getattr(self, "window", "hann")),
                 "N FFT": int(getattr(self, "n_fft", 4096)),
-                "Hop Length": int(hl),  # hl tem de estar definido antes
+                "Hop Length": int(hl),
                 "Search Band (cents)": int(getattr(self, "search_band_cents", 5)),
                 "SNR Threshold (dB)": float(getattr(self, "snr_threshold_db", 20.0)),
-                "Coherent Gain": float(cg_val),  # cg_val tem de estar definido antes
-                "DM Domain": str(getattr(self, "dm_domain", "amplitude")),  # ou "power", conforme a tua convenÃ§Ã£o
+                "Coherent Gain": float(cg_val),
+                "DM Domain": str(getattr(self, "dm_domain", "amplitude")),
                 "Density Scale": "bark",
-                "Sigma (scale units)": 0.5,              # 0.5 Bark
-                "Max Peaks per Band": 4,                 # ou NaN/None
-                "Weight R": 0.45,
-                "Weight P": 0.55,
-                }
-
+                "Sigma (scale units)": 0.5,
+                "Max Peaks per Band": 4,
+                
+                # --- CORRIGIDO AQUI ---
+                "Weight R": float(_final_wr),
+                "Weight P": float(_final_wp),
+                # ----------------------
+            }
 
             if isinstance(self.harmonic_list_df, pd.DataFrame) and not self.harmonic_list_df.empty:
                 main_metrics["Harmonic Count"] = int(len(self.harmonic_list_df))
@@ -2286,14 +2391,14 @@ class AudioProcessor:
             metrics_df = pd.DataFrame([main_metrics])
             metrics_df.to_excel(writer, sheet_name="Metrics", index=False)
 
-            # ===== 4. POTÃŠNCIA ESPECTRAL =====
+            # ===== 4. POTÊNCIA ESPECTRAL =====
             if getattr(self, "db_S", None) is not None:
                 try:
                     self._save_spectral_power_data(writer, note)
                 except Exception as e:
-                    log.debug(f"_save_spectral_power_data indisponÃ­vel: {e}")
+                    log.debug(f"_save_spectral_power_data indisponível: {e}")
 
-            # ===== 5. PARÃ‚METROS =====
+            # ===== 5. PARÂMETROS =====
             params_data = {
                 "Parameter": [
                     "Note", "Sample Rate (Hz)", "FFT Size", "Hop Length", "Window Type", "Weight Function",
@@ -2321,6 +2426,5 @@ class AudioProcessor:
                 pd.DataFrame([{"note": note, "error": str(e)}]).to_excel(writer, sheet_name="Error", index=False)
             except Exception:
                 pass
-
 
 

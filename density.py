@@ -879,9 +879,9 @@ def plot_harmonic_spectrum(
         plt.close()
         raise
 
-def _hz_to_bark(f_hz):
-    f = np.asarray(f_hz, float)
-    return 26.81/(1.0 + 1960.0/np.clip(f, 1e-9, None)) - 0.53
+# Funções auxiliares necessárias (caso não estejam importadas no escopo)
+def _hz_to_bark(f):
+    return 13.0 * np.arctan(0.00076 * f) + 3.5 * np.arctan((f / 7500.0) ** 2)
 
 def spectral_density(
     freqs_hz, amps, f0_hz=None,
@@ -901,76 +901,133 @@ def spectral_density(
     amps = np.asarray(amps, float)
     mask = (freqs_hz > 0) & (amps > 0) & np.isfinite(freqs_hz) & np.isfinite(amps)
     freqs_hz, amps = freqs_hz[mask], amps[mask]
+    
     if freqs_hz.size == 0:
         return dict(R_norm=0.0, P_norm=0.0, W_low=0.0, D_agn=0.0, D_peso=0.0, D_harm=None)
 
     # pesos normalizados (potência^gamma)
     p = (amps**gamma)
-    p = p / p.sum()
+    p_sum = p.sum()
+    if p_sum > 0:
+        p = p / p_sum
+    else:
+        return dict(R_norm=0.0, P_norm=0.0, W_low=0.0, D_agn=0.0, D_peso=0.0, D_harm=None)
 
     # --- coordenada Bark e janela relativa a f0 ---
     u_bark = _hz_to_bark(freqs_hz)
     if (f0_hz is not None) and np.isfinite(f0_hz) and f0_hz > 0:
-        u0 = float(_hz_to_bark(np.array([f0_hz]))[0])
-        win = (u_bark >= u0) & (u_bark <= u0 + float(bark_window))
-        if win.any():
-            u_bark, p, freqs_hz = u_bark[win], p[win], freqs_hz[win]
+        u0_arr = _hz_to_bark(np.array([f0_hz]))
+        if u0_arr.size > 0:
+            u0 = float(u0_arr[0])
+            win = (u_bark >= u0) & (u_bark <= u0 + float(bark_window))
+            if win.any():
+                u_bark, p, freqs_hz = u_bark[win], p[win], freqs_hz[win]
+                # Re-normalizar p após janela? Geralmente sim para métricas de distribuição
+                p = p / p.sum()
 
     # cap por banda Bark
     if max_peaks_per_band and max_peaks_per_band > 0:
         bands = np.floor(u_bark + 0.5)
         keep = np.zeros_like(bands, dtype=bool)
-        for b in np.unique(bands):
+        unique_bands = np.unique(bands)
+        for b in unique_bands:
             idx = np.where(bands == b)[0]
             if idx.size > max_peaks_per_band:
+                # Manter os picos com maior amplitude
                 idx = idx[np.argsort(p[idx])[::-1][:max_peaks_per_band]]
             keep[idx] = True
-        u_bark, p, freqs_hz = u_bark[keep], p[keep], freqs_hz[keep]
-        p = p / p.sum()
+        
+        if keep.any():
+            u_bark, p, freqs_hz = u_bark[keep], p[keep], freqs_hz[keep]
+            p = p / p.sum()
 
     M = p.size
     # --- R (riqueza efetiva, Hill q=1) ---
     if M <= 1:
         R_norm = 0.0
     else:
-        H = -np.sum(p * np.log(np.clip(p, 1e-12, 1.0))) if abs(q-1.0) < 1e-12 \
-            else np.log(np.power(np.sum(np.power(p, q)), 1.0/(1.0-q)))
-        N_eff = float(np.exp(H))
+        # Proteção numérica no log
+        p_safe = np.clip(p, 1e-12, 1.0)
+        if abs(q - 1.0) < 1e-12:
+            H = -np.sum(p * np.log(p_safe))
+            N_eff = np.exp(H)
+        else:
+            denom = 1.0 - q
+            if denom == 0: denom = 1e-12 # Should correspond to q=1 case, but safeguard
+            N_eff = np.power(np.sum(np.power(p, q)), 1.0 / denom)
+            
+        N_eff = float(N_eff)
+        # R_norm pode ser NaN se M=1, mas já tratámos M<=1
         R_norm = (N_eff - 1.0) / (M - 1.0)
+        R_norm = max(0.0, min(1.0, R_norm))
 
     # --- P (proximidade em Bark) ---
     if M <= 1:
         P_norm = 0.0
     else:
+        # Matriz de distâncias
         d = np.abs(u_bark[:, None] - u_bark[None, :])
+        # Ignorar auto-distância na soma ou usar exp(0)=1? 
+        # Fórmula original usava fill_diagonal infinity para zerar K
         np.fill_diagonal(d, np.inf)
+        
         K = np.exp(-(d**2) / (2.0 * float(sigma)**2))
-        P_num = float((p[:, None] * p[None, :] * K)[~np.isinf(d)].sum())
+        
+        # Numerador: soma ponderada das proximidades
+        # Mask diagonal already handled by d=inf -> K=0
+        P_num = float(np.sum((p[:, None] * p[None, :]) * K))
+        
+        # Denominador: Máximo possível (Simpsons index complement)
         P_den = float(1.0 - np.sum(p**2))
-        P_norm = 0.0 if P_den <= 0 else min(P_num / P_den, 1.0)
+        
+        if P_den <= 1e-12:
+            P_norm = 0.0
+        else:
+            P_norm = min(P_num / P_den, 1.0)
 
     # --- W (peso baixo-freq: partilha em Bark baixos) ---
     bark_idx = np.clip(np.floor(u_bark + 0.5).astype(int), 1, 24)
-    # energia por banda (usa p como fração de potência)
     E_band = {}
     for bi, pi in zip(bark_idx, p):
         E_band[bi] = E_band.get(bi, 0.0) + float(pi)
+        
     num = sum(v for k, v in E_band.items() if k <= int(low_bark_cut))
-    den = sum(E_band.values()) or 1.0
+    den = sum(E_band.values())
+    if den == 0: den = 1.0
     W_low = float(num / den)  # 0..1
 
-    # --- combinações ---
+    # --- COMBINAÇÕES (CORRIGIDO) ---
     wr, wp = float(weight_r), float(weight_p)
-    s = wr + wp
-    wr, wp = (0.5, 0.5) if s <= 0 else (wr/s, wp/s)
-    D_core = wr*R_norm + wp*P_norm
-    lam = float(lambda_low)
-    lam = 0.0 if not np.isfinite(lam) else max(0.0, min(1.0, lam))
-    D_peso = (1.0 - lam)*D_core + lam*W_low
+    
+    # [FIX] REMOVIDA A NORMALIZAÇÃO FORÇADA
+    # Antes: s = wr + wp; wr = wr/s... (Isto matava o "Equal Power")
+    # Agora: Aceitamos os pesos como vêm. Se a soma for > 1 (Log mode), 
+    # o resultado D_core aumenta, compensando a queda perceptiva.
+    
+    # Proteção básica apenas contra negativos
+    wr = max(0.0, wr)
+    wp = max(0.0, wp)
+    
+    # Se ambos forem zero (erro de input), usamos 0.5 default
+    if wr == 0 and wp == 0:
+        wr, wp = 0.5, 0.5
 
-    return dict(R_norm=float(R_norm), P_norm=float(P_norm),
-                W_low=float(W_low), D_agn=float(D_core), D_peso=float(D_peso),
-                D_harm=None)
+    D_core = wr * R_norm + wp * P_norm
+    
+    # Lambda mistura o resultado core com o peso de graves
+    lam = float(lambda_low)
+    lam = max(0.0, min(1.0, lam)) if np.isfinite(lam) else 0.0
+    
+    D_peso = (1.0 - lam) * D_core + lam * W_low
+
+    return dict(
+        R_norm=float(R_norm), 
+        P_norm=float(P_norm),
+        W_low=float(W_low), 
+        D_agn=float(D_core), 
+        D_peso=float(D_peso),
+        D_harm=None
+    )
 
 # --- FIM NOVO ---
 

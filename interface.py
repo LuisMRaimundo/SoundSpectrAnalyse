@@ -64,13 +64,14 @@ ALLOWED_OPEN_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".html", ".htm",
 
 # --- Mapa de rótulos da UI (Português) para chaves internas (density.py)
 _UI_WEIGHT_KEY = {
+    
+    "LOGARÍTMICA":   "log",
     "LINEAR":        "linear",
     "RAIZ QUADRADA": "sqrt",
     "RAIZ CÚBICA":   "cbrt",
     "QUADRADO":      "squared",
     "CÚBICA":        "cubic",
     "EXPONENCIAL":   "exp",
-    "LOGARÍTMICA":   "log",
     "INV. LOG":      "inverse log",
     "SOMA":          "sum",
 }
@@ -86,14 +87,14 @@ def _resolve_weight_key_from_ui(label: str) -> str:
     key = str(label).strip().lower()
 
     mapping = {
+         "log": "log",
+        "logarítmica": "log",
+        "logaritmica": "log",
         "linear": "linear",
         "raiz quadrada": "sqrt",
         "sqrt": "sqrt",
         "quadrática": "square",
         "quadratica": "square",
-        "log": "log",
-        "logarítmica": "log",
-        "logaritmica": "log",
         "exponencial": "exp",
         "exp": "exp",
     }
@@ -330,7 +331,7 @@ class SpectrumAnalyzer(QMainWindow):
         grid_filters.addRow("Modo de tolerância:", self.checkbox_adaptive_tolerance)
 
         # MODIFICAÇÃO: Aumentar tolerância padrão
-        self.input_tolerance = QLineEdit("10.0")
+        self.input_tolerance = QLineEdit("5.0")
     
         grid_filters.addRow("Minimum Frequency (Hz):", self.input_min_freq)
         grid_filters.addRow("Maximum Frequency (Hz):", self.input_max_freq)
@@ -381,7 +382,7 @@ class SpectrumAnalyzer(QMainWindow):
         metric_layout = QFormLayout()
     
         self.combo_weight_function = QComboBox()
-        self.combo_weight_function.addItems(['linear', 'sqrt', 'cbrt', 'exp', 'log', 'inverse log', 'sum'])
+        self.combo_weight_function.addItems(['log','linear', 'sqrt', 'cbrt', 'exp','inverse log', 'sum'])
         metric_layout.addRow("Weight Function:", self.combo_weight_function)
     
         # Slider and layout for harmonic/inharmonic weights
@@ -2509,7 +2510,7 @@ class SpectrumAnalyzer(QMainWindow):
             freq_max = float((self.input_max_freq.text() or "20000").strip())
             db_min   = float((self.input_min_db.text()  or "-90").strip())
             db_max   = float((self.input_max_db.text()  or "0").strip())
-            tolerance = float((self.input_tolerance.text() or "10.0").strip())
+            tolerance = float((self.input_tolerance.text() or "5.0").strip())
             use_adaptive_tolerance = bool(self.checkbox_adaptive_tolerance.isChecked())
 
             # ---------------- Parâmetros de janela e FFT -------------------
