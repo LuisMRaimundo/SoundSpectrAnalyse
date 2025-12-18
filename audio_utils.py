@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # audio_utils.py – Utilities for audio I/O, units, and perceptual tolerances.
 
 """
@@ -98,7 +98,6 @@ def load_audio_with_fallback(file_path: Path) -> tuple[np.ndarray | None, int | 
 
 # Convenções:
 # - Magnitude (dB) = 20*log10(|X|)
-# - Spectral Power (dB) = 10*log10(|X|**2)  ≡  Magnitude (dB)
 # - RMS (dB) = 20*log10(RMS amplitude)
 _EPS = np.finfo(float).tiny
 
