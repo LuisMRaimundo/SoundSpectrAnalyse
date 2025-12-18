@@ -21,12 +21,12 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, Union
 from density import spectral_density
 from audio_utils import harmonic_tolerance_hz
+import math
 
 import librosa
 import librosa.display
 import matplotlib.pyplot as plt
 import numpy as np
-
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -68,7 +68,7 @@ if not logger.handlers:
         logging.basicConfig(level=logging.INFO)
 
 # ====================================================
-# CONFIGURAÃ‡ÃƒO GLOBAL
+# CONFIGURAÇÃO GLOBAL
 # ====================================================
 DEFAULT_N_FFT: int = 4096
 DEFAULT_HOP_LENGTH: int = 1024
@@ -176,30 +176,33 @@ def _extract_amplitude_column(df: pd.DataFrame) -> np.ndarray:
     return np.asarray([], dtype=float)
 
 
-@lru_cache(maxsize=128)
-def frequency_to_note_name(frequency: float) -> str:
+_NOTE_NAMES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+
+def frequency_to_note_name(freq_hz: float, a4: float = 440.0) -> str:
     """
-    Converte frequÃªncia em nome de nota aproximado (com cents).
+    Converte frequência (Hz) para nome de nota temperado igual (A4=440), com cents.
+    Retorna string tipo: 'A#3 (+12.3 cents)'.
     """
-    if frequency <= 0:
-        return "Invalid Frequency"
-    freq_A4 = 440.0
-    freq_C0 = freq_A4 * 2 ** (-4.75)
-    h = int(round(12 * np.log2(frequency / freq_C0)))
-    octave = h // 12
-    n = h % 12
-    note_names = ['C', 'C#', 'D', 'D#', 'E', 'F',
-                  'F#', 'G', 'G#', 'A', 'A#', 'B']
-    flat_note_names = ['C', 'Db', 'D', 'Eb', 'E', 'F',
-                       'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
-    note_name_sharp = note_names[n] + str(octave)
-    note_name_flat = flat_note_names[n] + str(octave)
-    closest_note_frequency = freq_C0 * 2 ** (h / 12)
-    cents_deviation = 1200 * np.log2(frequency / closest_note_frequency)
-    if note_name_sharp[:2] in ['C#', 'D#', 'F#', 'G#', 'A#']:
-        return f"{note_name_flat} ({cents_deviation:+.2f} cents)"
-    else:
-        return f"{note_name_sharp} ({cents_deviation:+.2f} cents)"
+    try:
+        f = float(freq_hz)
+    except Exception:
+        return ""
+
+    if not math.isfinite(f) or f <= 0.0:
+        return ""
+
+    # MIDI float (A4=69)
+    midi = 69.0 + 12.0 * math.log2(f / a4)
+    midi_round = int(round(midi))
+
+    name = _NOTE_NAMES_SHARP[midi_round % 12]
+    octave = (midi_round // 12) - 1
+
+    # cents relativo à nota arredondada
+    f_ref = a4 * (2.0 ** ((midi_round - 69) / 12.0))
+    cents = 1200.0 * math.log2(f / f_ref)
+
+    return f"{name}{octave} ({cents:+.2f} cents)"
 
 
 # ====================================================
@@ -226,6 +229,72 @@ class AudioProcessor:
                 return float(getattr(self, "tolerance", 5.0))
         except Exception:
             return float(getattr(self, "tolerance", 5.0))
+
+
+class AudioProcessor:
+
+
+    @lru_cache(maxsize=128)
+    def calculate_fundamental_frequency(self, note: str) -> float:
+        """
+        Converte nome de nota (ex.: A4, A#4, Bb3, Ab4, C-1, C#5, etc.) em Hz (A4=440).
+        Também aceita entrada numérica em Hz (ex.: "440", "440.0", 440).
+        """
+        s = (note or "").strip()
+        if not s:
+            self.logger.warning("Nota vazia/None em calculate_fundamental_frequency()")
+            return 0.0
+
+        # 1) FAST PATH: aceitar frequência em Hz
+        try:
+            s_num = s.replace(",", ".")
+            f_hz = float(s_num)
+            if f_hz > 0.0 and math.isfinite(f_hz):
+                return float(f_hz)
+        except Exception:
+            pass
+
+        # 2) Parse de nota: letra + acidente opcional + oitava (aceita ♯ ♭)
+        s0 = s.split()[0]
+        m = re.search(r'([A-Ga-g])\s*([#b♯♭]?)\s*[-_]?(\-?\d+)', s0)
+        if not m:
+            self.logger.warning(f"Formato de nota inválido: {note}")
+            return 0.0
+
+        letter = m.group(1).upper()
+        acc = m.group(2)
+        if acc == "♯":
+            acc = "#"
+        elif acc == "♭":
+            acc = "b"
+
+        octave = int(m.group(3))
+        pitch = letter + acc
+
+        names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+        flats = {'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#', 'Cb': 'B', 'Fb': 'E'}
+        sharps = {'E#': 'F', 'B#': 'C'}
+
+        if pitch in flats:
+            pitch = flats[pitch]
+        if pitch in sharps:
+            pitch = sharps[pitch]
+
+        if pitch not in names:
+            self.logger.warning(f"Nota não reconhecida: {pitch} (de {note})")
+            return 0.0
+
+        # 3) Frequência por semitons relativos a C0
+        freq_A4 = 440.0
+        freq_C0 = freq_A4 * 2 ** (-4.75)  # C0 quando A4=440
+
+        idx = names.index(pitch)
+        h = idx + 12 * octave
+        f = freq_C0 * (2 ** (h / 12.0))
+
+        self.logger.debug(f"F0({note}) = {f:.6f} Hz")
+        return float(f)
+
 
     # ----------------- janela p/ STFT -----------------
     def _get_window_arg(self):
@@ -941,45 +1010,97 @@ class AudioProcessor:
             return
 
         # ===== 1. BLOCO DE FILTROS E CORREÇÃO DE AMPLITUDE =====
-    
-        # Aplica filtros de frequência e magnitude (dB) [8, 9]
+
+        # Aplica filtros de frequência e magnitude (dB)
         fdf = self.complete_list_df[
-            (self.complete_list_df['Frequency (Hz)'] >= freq_min) &
-            (self.complete_list_df['Frequency (Hz)'] <= freq_max) &
-            (self.complete_list_df['Magnitude (dB)'] >= db_min) &
-            (self.complete_list_df['Magnitude (dB)'] <= db_max)
+            (self.complete_list_df["Frequency (Hz)"] >= freq_min) &
+            (self.complete_list_df["Frequency (Hz)"] <= freq_max) &
+            (self.complete_list_df["Magnitude (dB)"] >= db_min) &
+            (self.complete_list_df["Magnitude (dB)"] <= db_max)
         ].copy()
 
+        # ---------- NOVO: fallback se filtros esvaziam ----------
         if fdf.empty:
-            self.logger.warning(f"Nenhum componente dentro dos filtros para {note}")
-            self.filtered_list_df = fdf
-            self.harmonic_list_df = pd.DataFrame()
-            self._set_default_metrics()
-            return
+            self.logger.warning(
+                f"Nenhum componente dentro dos filtros para {note}. "
+                f"Tentando incluir o bin mais próximo de f0."
+            )
 
-        # dB (Magnitude) -> Amplitude Linear [1, 2]
-        amps = np.power(10.0, fdf['Magnitude (dB)'].to_numpy(float) / 20.0)
+            # tentar obter f0 (nota ou Hz)
+            try:
+                f0 = float(self.calculate_fundamental_frequency(note) or 0.0)
+            except Exception:
+                f0 = 0.0
 
-        # Coherent Gain (Gc) Correction: Essencial para métricas absolutas [1, 2, 7]
-        cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
-        if cg <= 0.0:
-            cg = 1.0
-        
-        fdf['Amplitude'] = amps / cg # APLICAR CORREÇÃO
-        self._filtered_amp_corrected = True  # filtered_list_df já está corrigida por ganho coerente
+            if (
+                f0 > 0.0 and
+                self.complete_list_df is not None and
+                not self.complete_list_df.empty and
+                "Frequency (Hz)" in self.complete_list_df.columns and
+                "Magnitude (dB)" in self.complete_list_df.columns
+            ):
+                try:
+                    # escolher o bin mais próximo de f0 (sem filtros)
+                    idx = (self.complete_list_df["Frequency (Hz)"] - f0).abs().idxmin()
+                    row = self.complete_list_df.loc[[idx]].copy()
 
+                    # converter dB -> amplitude e corrigir coherent gain (mesma regra do resto)
+                    amps = np.power(10.0, row["Magnitude (dB)"].to_numpy(float) / 20.0)
 
-    
+                    cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
+                    if cg <= 0.0:
+                        cg = 1.0
+
+                    row["Amplitude"] = amps / cg
+                    self._filtered_amp_corrected = True
+
+                    # usar este fallback como lista filtrada mínima
+                    fdf = row
+
+                    self.logger.info(
+                        f"Fallback aplicado: 1 componente reinserido próximo de f0={f0:.3f} Hz "
+                        f"(bin={float(fdf['Frequency (Hz)'].iloc[0]):.6f} Hz)."
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Falha ao aplicar fallback f0: {e}")
+                    self.filtered_list_df = pd.DataFrame()
+                    self.harmonic_list_df = pd.DataFrame()
+                    self._set_default_metrics()
+                    return
+            else:
+                # sem f0 ou sem complete_list_df: mantém comportamento antigo
+                self.filtered_list_df = pd.DataFrame()
+                self.harmonic_list_df = pd.DataFrame()
+                self._set_default_metrics()
+                return
+        # ---------- FIM NOVO ----------
+
+        # dB (Magnitude) -> Amplitude Linear (apenas se ainda não existir amplitude)
+        if "Amplitude" in fdf.columns:
+            # garantir float
+            fdf["Amplitude"] = fdf["Amplitude"].astype(float)
+        else:
+            amps = np.power(10.0, fdf["Magnitude (dB)"].to_numpy(float) / 20.0)
+
+            # Coherent Gain (Gc) Correction
+            cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
+            if cg <= 0.0:
+                cg = 1.0
+
+            fdf["Amplitude"] = amps / cg
+            self._filtered_amp_corrected = True  # filtered_list_df já está corrigida por ganho coerente
+
         # Limpeza de valores extremos
         fdf.replace([np.inf, -np.inf], np.nan, inplace=True)
-        fdf.dropna(subset=['Amplitude'], inplace=True)
-        fdf = fdf.sort_values(by='Amplitude', ascending=False).reset_index(drop=True)
-    
+        fdf.dropna(subset=["Amplitude"], inplace=True)
+
+        # Ordenar por amplitude desc (mantém coerência)
+        fdf = fdf.sort_values(by="Amplitude", ascending=False).reset_index(drop=True)
+
         self.filtered_list_df = fdf
         self.logger.info(f"Lista filtrada: {len(fdf)} parciais")
 
         # ===== 2. GERAÇÃO DE HARMÓNICOS =====
-    
         self._generate_harmonic_list(
             note, freq_max, tolerance,
             use_adaptive_tolerance=getattr(self, "use_adaptive_tolerance", True)
@@ -1001,42 +1122,67 @@ class AudioProcessor:
             self._calculate_metrics()
 
         # ===== 4. VERIFICAÇÃO FINAL DE DM (Fallback) =====
-        # Este bloco garante que o DM absoluto é calculado mesmo se o passo anterior falhar
-        if (self.scaled_density_metric_value is None) or (self.scaled_density_metric_value == 0):
-            self.logger.warning("Density Metric não calculada; tentativa de recálculo (corrigida).")
-            try:
-                if self.harmonic_list_df is not None and not self.harmonic_list_df.empty:
-                
-                    # Garantir coluna Amplitude [11, 12]
-                    if 'Amplitude' not in self.harmonic_list_df.columns and 'Magnitude (dB)' in self.harmonic_list_df.columns:
-                        self.harmonic_list_df['Amplitude'] = np.power(
-                            10.0, self.harmonic_list_df['Magnitude (dB)'].to_numpy(float) / 20.0
-                        )
-                
-                    if 'Amplitude' in self.harmonic_list_df.columns:
-                        amps = self.harmonic_list_df['Amplitude'].to_numpy(float)
-                    
-                        # Calibração final do CG (usa o helper disponível) [11, 12]
-                        try:
-                            # Tenta obter a função de ganho coerente do escopo global
-                            _cg_fn = globals().get('_coherent_gain') or globals().get('_coherent_gain_local')
-                            cg_fallback = float(_cg_fn(getattr(self, "window", "hann"), int(getattr(self, "n_fft", 4096)))) if _cg_fn else 1.0
-                        except Exception:
-                            cg_fallback = 1.0
-                    
-                        if cg_fallback > 0:
-                            amps = amps / cg_fallback
+        # Este bloco só actua se DM não foi calculado (None/NaN), não por ser 0.
+        dm_invalid = (
+            self.scaled_density_metric_value is None
+            or (isinstance(self.scaled_density_metric_value, float) and not np.isfinite(self.scaled_density_metric_value))
+        )
 
-                        # Aplica a métrica de densidade absoluta [13, 14]
-                        density = float(apply_density_metric(amps, self.weight_function, normalize=False))
-                        self.density_metric_value = density
-                        self.scaled_density_metric_value = density
-                        self.logger.info(f"Density Metric recalculada (absoluta): {self.scaled_density_metric_value:.6f}")
+        if dm_invalid:
+            self.logger.warning("Density Metric não calculada (None/NaN). Tentativa de recálculo em fallback.")
+            try:
+                # Escolher a melhor fonte de amplitudes disponíveis:
+                # 1) harmónicos; 2) filtrada; 3) completa (último recurso)
+                src_df = None
+                if getattr(self, "harmonic_list_df", None) is not None and not self.harmonic_list_df.empty:
+                    src_df = self.harmonic_list_df
+                elif getattr(self, "filtered_list_df", None) is not None and not self.filtered_list_df.empty:
+                    src_df = self.filtered_list_df
+                elif getattr(self, "complete_list_df", None) is not None and not self.complete_list_df.empty:
+                    src_df = self.complete_list_df
+
+                if src_df is None:
+                    self.density_metric_value = 0.0
+                    self.scaled_density_metric_value = 0.0
+                else:
+                    # Garantir Amplitude linear (SEM reaplicar coherent gain se já foi aplicado)
+                    if "Amplitude" in src_df.columns:
+                        amps = src_df["Amplitude"].to_numpy(float)
+                    elif "Magnitude (dB)" in src_df.columns:
+                        amps = np.power(10.0, src_df["Magnitude (dB)"].to_numpy(float) / 20.0)
+
+                        # aplicar coherent gain apenas se ainda não corrigiu amplitudes antes
+                        cg = float(getattr(self, "coherent_gain_value", 1.0) or 1.0)
+                        if cg <= 0.0:
+                            cg = 1.0
+                        amps = amps / cg
                     else:
+                        amps = np.asarray([], dtype=float)
+
+                    # limpar amps
+                    amps = np.asarray(amps, dtype=float)
+                    amps = amps[np.isfinite(amps)]
+                    amps = amps[amps > 0.0]
+
+                    # caso limite: 0 ou 1 componente -> DM definido por convenção (não "falha")
+                    if amps.size <= 1:
                         self.density_metric_value = 0.0
                         self.scaled_density_metric_value = 0.0
+                        self.logger.info(f"Fallback DM: amps.size={amps.size} -> DM definido como 0.0 (caso limite).")
+                    else:
+                        density = float(apply_density_metric(amps, self.weight_function, normalize=False))
+                        if not np.isfinite(density):
+                            density = 0.0
+
+                        self.density_metric_value = density
+                        self.scaled_density_metric_value = density
+                        self.logger.info(f"Density Metric recalculada (fallback): {density:.6f}")
+
             except Exception as e:
-                self.logger.error(f"Recalcular DM falhou: {e}", exc_info=True)
+                self.logger.error(f"Recalcular DM (fallback) falhou: {e}", exc_info=True)
+                self.density_metric_value = 0.0
+                self.scaled_density_metric_value = 0.0
+
 
 
     def _reset_metrics(self) -> None:
@@ -1052,42 +1198,6 @@ class AudioProcessor:
             self.dissonance_values[model_name] = None
             self.dissonance_curves[model_name] = None
             self.dissonance_scales[model_name] = None
-
-    # ----------------- F0 por nota (robusto) -----------------
-    @lru_cache(maxsize=128)
-    def calculate_fundamental_frequency(self, note: str) -> float:
-        """
-        Converte nome de nota para frequÃªncia via C0 e semitons; aceita bemÃ³is/sustenidos.
-        """
-        # normalizaÃ§Ãµes simples
-        s = (note or "").strip()
-        m = re.search(r'([A-Ga-g])([#?b?]?)[-_]?(-?\d+)', s)
-        if not m:
-            self.logger.warning(f"Formato de nota invÃ¡lido: {note}")
-            return 0.0
-        letter = m.group(1).upper()
-        acc = m.group(2).replace('?', '#').replace('?', 'b')
-        octave = int(m.group(3))
-        pitch = letter + acc
-
-        names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-        flats = {'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#'}
-        if pitch in flats:
-            pitch = flats[pitch]
-        if pitch not in names:
-            self.logger.warning(f"Nota nÃ£o reconhecida: {pitch}")
-            return 0.0
-
-        freq_A4 = 440.0
-        # C0
-        freq_C0 = freq_A4 * 2 ** (-4.75)
-        # Ã­ndice do pitch
-        idx = names.index(pitch)
-        # semitons relativos a C0
-        h = idx + 12 * octave
-        f = freq_C0 * (2 ** (h / 12))
-        self.logger.debug(f"F0({note}) = {f:.2f} Hz")
-        return float(f)
 
     # ----------------- gerar lista de harmÃ³nicos -----------------
     def _generate_harmonic_list(
