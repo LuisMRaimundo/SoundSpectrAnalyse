@@ -1,4 +1,4 @@
-﻿# density.py - Corrected Version
+# density.py - Corrected Version
 
 """
 Module for calculating spectral density metrics for musical audio analysis.
@@ -171,7 +171,7 @@ def calculate_inharmonic_density(
     """
     Same as harmonic density, but for inharmonic components.
     """
-    return calculate_harmonic_density(inharmonic_amplitudes, threshold_db, max_expected_partials)
+    return calculate_harmonic_density(inharmonic_amplitudes, threshold_db=threshold_db, max_expected_harmonics=max_expected_partials)
 
 
 def compute_spectral_entropy(power: np.ndarray) -> float:
