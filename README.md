@@ -125,8 +125,6 @@ Do not add an open-source licence.
 
 This project was developed by **Luís Raimundo** with the support and funding of the **Fundação para a Ciência e a Tecnologia (FCT)** and **Universidade NOVA de Lisboa**.
 
-The FCT funding should be cited through its corresponding DOI in scientific publications, technical reports, datasets, software documentation, and other research outputs related to this project.
-
 **Funding DOI:** `https://doi.org/10.54499/2020.08817.BD`
 
 The author also gratefully acknowledges **Isabel Pires** for her support throughout the development of this work.
