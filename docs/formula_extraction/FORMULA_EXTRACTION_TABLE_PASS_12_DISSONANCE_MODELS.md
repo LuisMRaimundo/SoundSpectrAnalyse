@@ -1,0 +1,46 @@
+# Formula Extraction Table — Pass 12 — Dissonance Models
+
+Project-owned dissonance-model code only. Third-party primitives are treated as black boxes.
+
+| Function / class | Python expression | Mathematical formula | Symbol definitions | Notes |
+|---|---|---|---|---|
+| `DissonanceModel.total_dissonance` | nested `for` over `partials1` × `partials2` | \(D=\sum_{(f_1,a_1)\in\mathcal{P}_1}\sum_{(f_2,a_2)\in\mathcal{P}_2} d(f_1,f_2,a_1,a_2)\) | \(d=\) `pure_tones_dissonance`; \(\mathcal{P}_k\) lists of \((f,a)\) | Pairwise **cross** sum; model-dependent via \(d\). **extracted** |
+| `DissonanceModel.same_timbre_dissonance` | `[(f * interval, a) for ...]` | Shifted spectrum \(\tilde{\mathcal{P}}=\{(r f,a):(f,a)\in\mathcal{P}\}\), \(r>0\); default \(D=\texttt{total\_dissonance}(\mathcal{P},\tilde{\mathcal{P}})\) | \(r=\) `interval` (frequency ratio) | Sethares overrides (see below). **extracted** |
+| `DissonanceModel.calculate_dissonance_curve` | `np.linspace(min_interval, max_interval, num_points)` | Sample \(r_k\) linearly in \([r_{\min},r_{\max}]\); \(D(r_k)=\texttt{same\_timbre\_dissonance}(\mathcal{P},r_k)\) | `num_points` samples | Dict keys = \(r_k\). **extracted** |
+| `DissonanceModel.find_local_minima` | `val < curve[intervals[i-1]] and val < curve[i+1] and val < curve[i-1] - sensitivity` | Interior point \(r_i\) listed as minimum if strictly below both neighbours **and** \(D(r_i) < D(r_{i-1})-\varepsilon\) with \(\varepsilon=\) `sensitivity` | \(\varepsilon\) default `0.01` | Asymmetric vs left neighbour; **ambiguous / needs human review** (likely typo vs strict strict local minimum). **partially extracted** |
+| `DissonanceModel._dissonance_total_and_pairs` | `10 ** (Magnitude (dB) / 20)` | \(a = 10^{L/20}\) from dB if needed | \(L=\) `Magnitude (dB)` | Linear amplitude; then \(\sum_{i<j} d(f_i,f_j,a_i,a_j)\), \(n_{\mathrm{pairs}}\) count | **extracted** |
+| `DissonanceModel._dissonance_total_pairs_and_minamp` | `amps * (2.0 / N)` when `apply_amp_compensation` | Optional \(a_i' = a_i \cdot (2/N_{\mathrm{fft}})\) | \(N=\) `win_length` or `win_length`/`n_fft` from model attrs | Legacy FFT scaling hook. **extracted** |
+| `DissonanceModel._dissonance_total_pairs_and_minamp` | inner loops | \(S_{\min}=\sum_{i<j}\min(a_i,a_j)\), \(D_{\mathrm{tot}}=\sum_{i<j} d_{ij}\) | | **extracted** |
+| `DissonanceModel.calculate_dissonance_metric` | modes `sum`, `mean_pair`, `mean_pair_scaled`, `minamp_norm` | `sum`: \(D_{\mathrm{tot}}\); `mean_pair`: \(D_{\mathrm{tot}}/N_{\mathrm{pairs}}\); `mean_pair_scaled`: \((D_{\mathrm{tot}}/N_{\mathrm{pairs}})\cdot k\); `minamp_norm`: \(D_{\mathrm{tot}}/S_{\min}\) if \(S_{\min}>0\) | \(k=\) `metric_scale` (default `10`) | Delegates to `_dissonance_total_pairs_and_minamp`. **extracted** |
+| `SetharesDissonance._s` | `x_star / (s1 * f1 + s2)` | \(s(f)=\dfrac{x^\star}{s_1 f + s_2}\) with \(f\ge 10^{-12}\) | Defaults \(x^\star=0.24\), \(s_1=0.0207\), \(s_2=18.96\) | Critical-band–style scaling of freq. separation; **model-dependent** (Sethares-style). **extracted** |
+| `SetharesDissonance.pure_tones_dissonance` | order swap if `f1>f2`; `y = _s(f1)*(f2-f1)`; `d = min(a1,a2)*gain*(exp(-b1*y)-exp(-b2*y))` | With \(f_i<f_j\): \(y=s(f_i)(f_j-f_i)\), \(d=\min(a_i,a_j)\,g\big(e^{-b_1 y}-e^{-b_2 y}\big)\), \(g=\) `gain` | Defaults \(b_1=3.5\), \(b_2=5.75\), \(g=1\); clip \(d\le 0\to 0\) | Matches Plomp–Levelt / Sethares spectral-difference form; not identical to user’s \(a_i a_j\) template—uses **min** amplitude. **extracted**; **model-dependent** |
+| `SetharesDissonance._pairwise_sum` | sorted partials; `i<j` | \(D_{\mathrm{self}}=\sum_{i<j} d(f_i,f_j,a_i,a_j)\) on single multiset | | Used for `curve_mode='full'`. **extracted** |
+| `SetharesDissonance.same_timbre_dissonance` | `curve_mode == "cross"` | \(D=\sum_{p\in\mathcal{P}}\sum_{q\in r\mathcal{P}} d\) (cross only) | | **extracted** |
+| `SetharesDissonance.same_timbre_dissonance` | `full = _pairwise_sum(base + shifted)` | \(D_{\mathrm{full}}=\sum_{i<j} d\) over \(\mathcal{P}\cup r\mathcal{P}\) | | “Book” union spectrum. **extracted** |
+| `SetharesDissonance.same_timbre_dissonance` | `subtract_intrinsic` | \(D=\max(0,\,D_{\mathrm{full}}-D_{\mathcal{P}}-D_{r\mathcal{P}})\) with self-terms from `_pairwise_sum` each | | Removes uncrossed interactions. **extracted** |
+| `SetharesDissonance.calculate_dissonance_metric` | same modes as base with `self.metric_mode` / `self.metric_scale` | Identical structure to `DissonanceModel.calculate_dissonance_metric` but inlined on `df` | | **extracted** |
+| `HutchinsonKnopoffDissonance.cbw` | `1.72 * (f_bar ** 0.65)` | \(\mathrm{CBW}(\bar f)=1.72\,\bar f^{0.65}\) | \(\bar f=\tfrac12(f_i+f_j)\) in Hz later | Empirical critical-bandwidth proxy; **model-dependent**. **extracted** |
+| `HutchinsonKnopoffDissonance.g` | `np.interp(y, ys, gs)` | \(g(y)\) piecewise linear on tabulated \((y_k,g_k)\), \(y\in(0,1.2]\); else `0` | `DEFAULT_G_TABLE` pairs \((y,g)\) | Figure-1 lookup; **model-dependent** / tabular. **extracted** |
+| `HutchinsonKnopoffDissonance.pure_tones_dissonance` | `y = abs(f1-f2)/cb`; `(a1*a2*g(y))/denom` | \(N=a_1^2+a_2^2\), \(y=|f_1-f_2|/\mathrm{CBW}(\bar f)\), \(d=a_1 a_2\,g(y)/N\) | | Eq. (1)-style normalized product; **extracted** |
+| `HutchinsonKnopoffDissonance.total_dissonance` | double loop; `num / denom` | \(D=\dfrac{\sum_{i<j} a_i a_j\,g_{ij}}{\sum_i a_i^2}\) with \(g_{ij}=g(|f_i-f_j|/\mathrm{CBW}(\bar f_{ij}))\) | Docstring notes equivalence to \(\tfrac12\sum\sum/N\) form | **extracted** |
+| `VassilakisDissonance._s` | same rational as Sethares | \(s(f_{\mathrm{low}})=x^\star/(s_1 f_{\mathrm{low}}+s_2)\) | Same numerical constants as Sethares | **extracted** |
+| `VassilakisDissonance.pure_tones_dissonance` | `af_degree = 2*A2/(A1+A2)`; `x = s*(f2-f1)`; `spectral = exp(-b1*x)-exp(-b2*x)`; `R = (A1*A2)**spl_exp * pair_factor * af_degree**af_exp * spectral` | Let \(A_1=\max(a_i,a_j)\), \(A_2=\min(a_i,a_j)\), \(\mathrm{AF}=2A_2/(A_1+A_2)\), \(x=s(f_{\min})(f_{\max}-f_{\min})\): \(R=\tfrac12 (A_1 A_2)^{0.1}\,\mathrm{AF}^{3.11}\big(e^{-b_1 x}-e^{-b_2 x}\big)\) | `pair_factor=0.5`, `af_exp=3.11`, `spl_exp=0.1`, \(b_1,b_2,x^\star,s_1,s_2\) as Sethares | Stated as Eq. (6.23) in comments; **model-dependent**. **extracted** |
+| `calculate_all_dissonance_metrics` | loop over `_MODELS` | \(m_k=\texttt{calculate\_dissonance\_metric}(df)\) per registered model | | Error → `0.0`. **extracted** (aggregation only) |
+| `compare_dissonance_models` | `(v - v_min) / (v_max - v_min)` | Per-curve min–max normalisation of sampled \(D(r)\) for plotting | | Visualisation only. **extracted** |
+| `proc_audio.AudioProcessor.calculate_dissonance_metrics` | `nlargest(_cap, "Amplitude")` | Keep top-\(K\) partials by amplitude before pairwise work | \(K=\) `DISSONANCE_PAIRWISE_PARTIAL_CAP` (from `constants`, default `80`) | **Heuristic** complexity cap; **extracted** |
+| `proc_audio.AudioProcessor.calculate_dissonance_metrics` | `n_after * (n_after - 1) // 2` | \(N_{\mathrm{pairs}}=\binom{n}{2}\) after cap | | For bookkeeping. **extracted** |
+| `proc_audio.AudioProcessor.calculate_dissonance_metrics` | `calculate_dissonance_curve(partials, 1.0, 2.0, 200)` | \(r\in[1,2]\), 200 samples | | Pass-through to model. **extracted** |
+| `proc_audio.AudioProcessor.calculate_dissonance_metrics` | `find_local_minima` + insert `1.0` / `2.0` | Same as `analyze_real_timbre` scale endpoints | | **extracted** |
+| `compile_metrics.extract_dissonance_metrics` | `"Dissonance" in column`; `valid.iloc[0]` | For each sheet/column whose name contains `"Dissonance"`, export first finite row value | | String filter + first-row pick; **heuristic** export contract. **extracted** |
+
+## Summary
+
+- **Fully extracted:** `DissonanceModel.total_dissonance`, `same_timbre_dissonance` (default path), `calculate_dissonance_curve`, `_dissonance_total_and_pairs`, `_dissonance_total_pairs_and_minamp`, `calculate_dissonance_metric` (base), `SetharesDissonance` (`_s`, `pure_tones_dissonance`, `_pairwise_sum`, `same_timbre_dissonance` branches, metric override), `HutchinsonKnopoffDissonance` (`cbw`, `g`, `pure_tones_dissonance`, `total_dissonance`), `VassilakisDissonance.pure_tones_dissonance`, `calculate_all_dissonance_metrics`, `compare_dissonance_models` normalisation, `proc_audio.calculate_dissonance_metrics` (cap, pair count, curve/minima wiring), `compile_metrics.extract_dissonance_metrics`.
+
+- **Partially extracted:** `DissonanceModel.find_local_minima` (local-minimum rule documented; left-neighbour `- sensitivity` clause is non-standard).
+
+- **Not found / N/A:** `get_dissonance_model`, `list_available_models` — registry only, no formula-bearing math.
+
+- **Ambiguous or model-dependent (human review):** Sethares / Vassilakis numerical constants and Plomp–Levelt interpretation; Hutchinson–Knopoff `DEFAULT_G_TABLE` fidelity to published figure; `find_local_minima` asymmetry; `extract_dissonance_metrics` column-name substring rule; dissonance partial cap \(K\) vs physical spectrum.
+
+- **Validation-plan recommendation:** **Yes** — add `FORMULA_VALIDATION_PLAN_PASS_12_DISSONANCE_MODELS.md` later with toy two-partial Sethares/Vassilakis/H–K hand checks, a three-point synthetic curve for `find_local_minima`, and a stubbed two-column Excel slice for `extract_dissonance_metrics`.
