@@ -78,15 +78,14 @@ DEFAULT_PUBLICATION_METRIC_BY_SHEET: dict[str, Tuple[str, ...]] = {
     #
     #     density_log_weighted = log10(1 + density_weighted_sum)
     #
-    # with the harmonic-only ``harmonic_log_amplitude_density`` as
-    # secondary fallback when the full weighted metric is unavailable.
-    # ``density_metric_normalized`` is workbook-relative and was an
-    # earlier fallback; it is intentionally NOT defaulted-to here so
-    # publication plots reflect the absolute weighted-density figure
-    # rather than the run-bounded normalised value. ``density_metric_raw``
-    # is unbounded and is exposed only as an audit/diagnostic value;
-    # ``Harmonic Partials sum`` / ``Total sum`` are NEVER selected as
-    # defaults for publication-facing plots.
+    # where density_weighted_sum = D_H·w_H + D_I·w_I + D_S·w_S and each
+    # D_* follows the compile weight_function (same as density_metric_raw).
+    # harmonic_log_amplitude_density is the harmonic-only linear-amplitude
+    # fallback when the full weighted metric is unavailable.
+    # density_metric_normalized is workbook-relative; it is intentionally
+    # NOT defaulted-to here. density_metric_raw equals density_weighted_sum
+    # and is unbounded — diagnostic only for auto-default plots.
+    # Harmonic Partials sum / Total sum are NEVER selected as defaults.
     "Density_Metrics": (
         "density_log_weighted",
         "harmonic_log_amplitude_density",
