@@ -808,10 +808,18 @@ def _build_compile_guide_dataframe(meta_flat: Dict[str, Any], density_columns: L
     row(
         "Density_Metrics (compiled)",
         "Columns on this sheet",
-        "Note + ``weight_function`` (UI choice: linear, log, cubic, d3, …) + Harmonic / Inharmonic / Sub-bass "
-        "partial sums + Total. Those four sums follow ``partial_metric_sums_h_i_s_total`` with that same key "
-        "(non-linear continuous keys need not match pie %; discrete keys use export-aligned partial amplitudes). "
-        "Canonical / ``discrete_metric_d*`` columns remain the full density model readout.",
+        "Note + ``weight_function`` (compile key: linear, log, cubic, d3, …) + per-band "
+        "``harmonic_density_sum`` / ``inharmonic_density_sum`` / ``subbass_density_sum`` (each band uses that key) "
+        "+ ``density_metric_raw`` / ``density_weighted_sum`` (= D_H·w_H + D_I·w_I + D_S·w_S, same number) + legacy "
+        "``Harmonic Partials sum`` / ``Total sum``. ``harmonic_amplitude_sum`` is always a linear diagnostic and "
+        "does not change when you switch weight_function.",
+    )
+    row(
+        "Density_Metrics — weighted sum",
+        "density_weighted_sum semantics",
+        "D_H·component_harmonic_energy_ratio + D_I·component_inharmonic_energy_ratio + "
+        "D_S·component_subbass_energy_ratio, where each D_* is from extract_density_component_sum under the "
+        "compile weight_function. NOT a fixed linear amplitude sum.",
     )
     row(
         "Per-note workbook",
