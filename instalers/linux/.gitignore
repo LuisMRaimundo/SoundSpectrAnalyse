@@ -1,0 +1,7 @@
+build/
+dist/
+output/
+
+*.zip
+*.tar.gz
+*.AppImage

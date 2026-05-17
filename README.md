@@ -120,9 +120,17 @@ Continuous integration runs the full `tests/` suite on Ubuntu (`.github/workflow
 | **[NOTICE.md](NOTICE.md)** | Copyright and use terms (proprietary; no open-source licence granted). |
 | **[CITATION.cff](CITATION.cff)** | Citation metadata for software recognition. |
 
-## Windows installer (optional)
+## Cross-platform installers (optional)
 
-Build scripts for a standalone Windows app (no Python on the end user's PC) live in **[`Windows installer/`](Windows%20installer/)**. See **`Windows installer/README.md`** for `Build-All.ps1`, PyInstaller output, and optional Inno Setup. Built `.exe` / `.zip` files are **not** stored in git — use [GitHub Releases](https://github.com/LuisMRaimundo/SoundSpectrAnalyse/releases) to distribute them.
+Standalone apps (no Python on the end user's machine) are built from **[`instalers/`](instalers/)** — one folder per platform:
+
+| Folder | Platform | Build on |
+|--------|----------|----------|
+| [`instalers/windows/`](instalers/windows/) | Windows 10/11 | Windows |
+| [`instalers/mac/`](instalers/mac/) | macOS 11+ | **macOS only** |
+| [`instalers/linux/`](instalers/linux/) | Linux x86_64 | **Linux only** |
+
+See **`instalers/README.md`** for overview; each subfolder has its own README and build scripts (PyInstaller; Windows also supports Inno Setup). Built `.exe`, `.app`, `.dmg`, `.tar.gz` files are **not** stored in git — use [GitHub Releases](https://github.com/LuisMRaimundo/SoundSpectrAnalyse/releases) to distribute them.
 
 ## Acknowledgements
 
