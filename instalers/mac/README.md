@@ -1,46 +1,115 @@
-# SoundSpectrAnalyse — macOS installer
+# SoundSpectrAnalyse — instalação no macOS
 
-**Build on macOS only** (PyInstaller cannot cross-compile a `.app` from Windows).
+**Repositório:** https://github.com/LuisMRaimundo/SoundSpectrAnalyse
 
-See also: [`../README.md`](../README.md).
+**Importante:** os scripts desta pasta têm de ser executados **num Mac** (não é possível instalar ou compilar o `.app` a partir do Windows).
 
-## Prerequisites
+---
 
-- macOS 11+ (Intel or Apple Silicon)
-- Python 3.10+ with project dependencies (`pip install -r requirements.txt` in source tree)
-- Xcode Command Line Tools: `xcode-select --install`
-- Tk available (usually included with python.org or Homebrew Python)
+## Instalação para utilizadores (sem Python) — recomendado
 
-## Build
+### Requisitos
+
+- **macOS 11 (Big Sur)** ou superior
+- **Intel** ou **Apple Silicon (M1/M2/M3)**
+- Ligação à **Internet** (primeira instalação)
+- Conta de utilizador normal (não exige ser administrador para a instalação em `~/Applications`)
+
+### Passo a passo
+
+1. **Obter os ficheiros**
+   - No Mac, clone o repositório ou descarregue o ZIP do GitHub e abra **`instalers/mac`**.
+
+2. **Abrir a Terminal**
+   - **Finder → Aplicações → Utilitários → Terminal** (ou pesquise “Terminal”).
+
+3. **Ir à pasta do instalador**
+   ```bash
+   cd ~/Desktop/instalers/mac
+   ```
+   (Ajuste o caminho se colocou a pasta noutro sítio.)
+
+4. **Permitir execução do script**
+   ```bash
+   chmod +x install-easy.sh
+   ```
+
+5. **Executar a instalação**
+   ```bash
+   ./install-easy.sh
+   ```
+   - Se não tiver Python 3.10/3.11, o script tenta instalar via **Homebrew** (`brew install python@3.11`). Se não tiver Homebrew, instale Python em https://www.python.org/downloads/ e repita o passo 5.
+   - O script descarrega o projeto do GitHub e instala as bibliotecas — **10 a 25 minutos** na primeira vez.
+
+6. **Abrir o programa**
+   - **Finder → Aplicações → SoundSpectrAnalyse** → duplo clique em **`Launch-SoundSpectrAnalyse.command`**, ou
+   - Atalho no **Ambiente de trabalho**: **`SoundSpectrAnalyse Orchestrator.command`**.
+
+7. **Primeira abertura e segurança (Gatekeeper)**
+   - Se o macOS disser que a app não pode ser aberta porque é de um programador não identificado:
+     - **Definições do Sistema → Privacidade e segurança → Abrir mesmo assim**, ou
+     - Clique com o botão direito no `.command` → **Abrir** → **Abrir**.
+
+### Onde fica instalado
+
+| Conteúdo | Localização |
+|----------|-------------|
+| Aplicação e código | `~/Applications/SoundSpectrAnalyse/app/` |
+| Python e bibliotecas | `~/Applications/SoundSpectrAnalyse/venv/` |
+| Script de arranque | `~/Applications/SoundSpectrAnalyse/Launch-SoundSpectrAnalyse.command` |
+
+### Desinstalar
+
+```bash
+rm -rf ~/Applications/SoundSpectrAnalyse
+rm -f ~/Desktop/SoundSpectrAnalyse\ Orchestrator.command
+```
+
+(O Python instalado via Homebrew ou python.org **não** é removido.)
+
+### Áudio e FFmpeg (opcional)
+
+Para alguns formatos (ex.: MP3):
+
+```bash
+brew install ffmpeg
+```
+
+(Requer [Homebrew](https://brew.sh) instalado.)
+
+### Se a instalação falhar
+
+| Problema | O que fazer |
+|----------|-------------|
+| `command not found: python3` | Instale Python 3.11 de https://www.python.org/downloads/ ou `brew install python@3.11`. |
+| Erro `tkinter` | Reinstale Python com o instalador oficial (inclui Tcl/Tk). |
+| Erro de rede / pip | Verifique Wi‑Fi e proxy; volte a correr `./install-easy.sh`. |
+| Homebrew em falta | Instale em https://brew.sh ou use Python.org em vez de depender do brew. |
+
+---
+
+## Instalação avançada — `.app` portátil (PyInstaller)
+
+Para desenvolvedores que já têm o ambiente Python do projeto configurado.
 
 ```bash
 cd ~/Desktop/instalers/mac
 chmod +x *.sh
-export SOUNDSPECTRANALYSE_SOURCE="$HOME/Desktop/SoundSpectrAnalyse-main_6"   # if needed
 ./build-all.sh
 ```
 
-| Output (gitignored) | Purpose |
-|---------------------|---------|
-| `output/app/SoundSpectrAnalyse.app` | Portable application bundle |
-| `output/SoundSpectrAnalyse-macOS-3.7.0.zip` | Zip for sharing |
-| `output/SoundSpectrAnalyse-macOS-3.7.0.dmg` | Disk image (drag to Applications) |
+| Saída (pasta `output/`, não vai para o Git) | Descrição |
+|--------------------------------------------|-----------|
+| `output/app/SoundSpectrAnalyse.app` | Pacote de aplicação |
+| `output/SoundSpectrAnalyse-macOS-3.7.0.zip` | Zip para partilhar |
+| `output/SoundSpectrAnalyse-macOS-3.7.0.dmg` | Imagem de disco (arrastar para Aplicações) |
 
-## Install (end user)
-
-From `output/app/`:
+Depois de `./build-pyinstaller.sh`, pode correr em `output/app/`:
 
 ```bash
 ./install-soundspectranalyse.sh
 ```
 
-Or drag **SoundSpectrAnalyse.app** to **Applications**.
+(ou arrastar `SoundSpectrAnalyse.app` para **Aplicações**).
 
-## Gatekeeper
-
-Unsigned builds may be blocked. Users: **System Settings → Privacy & Security → Open Anyway**, or sign/notarize the app for distribution.
-
-## Notes
-
-- **FFmpeg:** `brew install ffmpeg` for some audio formats.
-- First launch may be slow while macOS verifies the bundle.
+Aplicações não assinadas podem exigir passos extra em **Privacidade e segurança** (ver acima).

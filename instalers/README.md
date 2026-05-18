@@ -1,39 +1,30 @@
-# SoundSpectrAnalyse — installers
+# SoundSpectrAnalyse — instaladores
 
-**GitHub:** https://github.com/LuisMRaimundo/SoundSpectrAnalyse
+**Repositório:** https://github.com/LuisMRaimundo/SoundSpectrAnalyse
 
-Scripts for **non-Python users** (easy install) and **developers** (PyInstaller portable builds).
+Esta pasta contém scripts para instalar o **SoundSpectrAnalyse** em utilizadores **sem conhecimentos de Python**. Escolha a pasta do seu sistema operativo:
 
-| Folder | Easy install (recommended) | Developer build |
-|--------|---------------------------|-----------------|
-| [`windows/`](windows/) | **`INSTALL.bat`** — Python + pip + shortcuts | `Build-All.ps1` |
-| [`mac/`](mac/) | **`install-easy.sh`** (on macOS) | `build-all.sh` |
-| [`linux/`](linux/) | **`install-easy.sh`** (on Linux) | `build-all.sh` |
+| Pasta | Sistema | Instalação recomendada |
+|-------|---------|------------------------|
+| **[`windows/`](windows/)** | Windows 10/11 (64 bits) | Duplo clique em **`INSTALL.bat`** |
+| **[`mac/`](mac/)** | macOS 11 ou superior | Script **`install-easy.sh`** |
+| **[`linux/`](linux/)** | Linux (Ubuntu, Debian, Fedora, …) | Script **`install-easy.sh`** |
 
-## Windows (most users)
+Cada subpasta tem um **README com instruções detalhadas** para esse sistema.
 
-1. Open folder `instalers\windows`
-2. Double-click **`INSTALL.bat`**
-3. Wait for completion; use the Desktop shortcut
+## O que a instalação “fácil” faz
 
-No command line or Python knowledge required.
+1. Instala ou deteta **Python 3.10 ou 3.11** (no Windows, instala automaticamente se faltar).
+2. Obtém o código a partir de **https://github.com/LuisMRaimundo/SoundSpectrAnalyse** (ramo `main`).
+3. Cria um ambiente isolado e instala as bibliotecas (`requirements.txt`).
+4. Cria um **atalho** para abrir a interface gráfica (**SoundSpectrAnalyse Orchestrator**).
 
-## macOS / Linux
+A primeira instalação pode demorar **10–25 minutos** (download + pacotes científicos). É necessária ligação à Internet.
 
-```bash
-chmod +x install-easy.sh
-./install-easy.sh
-```
+## O que não está incluído no Git
 
-Must be run **on** macOS or Linux respectively.
+Pastas `build/`, `dist/`, `output/` e ficheiros `.exe` / `.zip` / `.dmg` compilados **não** vão para o repositório. Para distribuir binários prontos, use [GitHub Releases](https://github.com/LuisMRaimundo/SoundSpectrAnalyse/releases).
 
-## What gets installed (easy mode)
+## Instalação avançada (desenvolvedores)
 
-- **Python 3.10 or 3.11** (installed automatically on Windows if missing)
-- Project from **GitHub** `main` (or a local copy if found next to `instalers/`)
-- All **`requirements.txt`** libraries in a private virtual environment
-- **Desktop / Start menu** shortcut to the Tk orchestrator GUI
-
-Install location (Windows): `%LocalAppData%\Programs\SoundSpectrAnalyse\`
-
-Built `.exe` / `.app` bundles are optional and live under `output/` (not in git).
+Em cada pasta existem também scripts **PyInstaller** (`Build-All.ps1`, `build-all.sh`) para gerar aplicações “portáteis” sem instalar Python no destino. São mais complexos e **não** são recomendados para utilizadores finais.
