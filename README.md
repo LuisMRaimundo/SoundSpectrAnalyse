@@ -126,8 +126,8 @@ Continuous integration runs the full `tests/` suite on Ubuntu (`.github/workflow
 
 End users without Python: see **[`instalers/`](instalers/)** — especially on Windows, double-click **`instalers/windows/INSTALL.bat`** (installs Python 3.11, downloads this repo, installs libraries, creates shortcuts).
 
-| Folder | Easy install | Advanced (PyInstaller) |
-|--------|--------------|------------------------|
+| Folder | Standard install | Portable build (PyInstaller) |
+|--------|------------------|------------------------------|
 | [`instalers/windows/`](instalers/windows/) | **`INSTALL.bat`** | `Build-All.ps1` |
 | [`instalers/mac/`](instalers/mac/) | `install-easy.sh` | `build-all.sh` |
 | [`instalers/linux/`](instalers/linux/) | `install-easy.sh` | `build-all.sh` |
