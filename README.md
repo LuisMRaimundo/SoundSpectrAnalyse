@@ -120,17 +120,19 @@ Continuous integration runs the full `tests/` suite on Ubuntu (`.github/workflow
 | **[NOTICE.md](NOTICE.md)** | Copyright and use terms (proprietary; no open-source licence granted). |
 | **[CITATION.cff](CITATION.cff)** | Citation metadata for software recognition. |
 
-## Cross-platform installers (optional)
+## Installers (optional)
 
-Standalone apps (no Python on the end user's machine) are built from **[`instalers/`](instalers/)** — one folder per platform:
+**Repository:** https://github.com/LuisMRaimundo/SoundSpectrAnalyse
 
-| Folder | Platform | Build on |
-|--------|----------|----------|
-| [`instalers/windows/`](instalers/windows/) | Windows 10/11 | Windows |
-| [`instalers/mac/`](instalers/mac/) | macOS 11+ | **macOS only** |
-| [`instalers/linux/`](instalers/linux/) | Linux x86_64 | **Linux only** |
+End users without Python: see **[`instalers/`](instalers/)** — especially on Windows, double-click **`instalers/windows/INSTALL.bat`** (installs Python 3.11, downloads this repo, installs libraries, creates shortcuts).
 
-See **`instalers/README.md`** for overview; each subfolder has its own README and build scripts (PyInstaller; Windows also supports Inno Setup). Built `.exe`, `.app`, `.dmg`, `.tar.gz` files are **not** stored in git — use [GitHub Releases](https://github.com/LuisMRaimundo/SoundSpectrAnalyse/releases) to distribute them.
+| Folder | Easy install | Advanced (PyInstaller) |
+|--------|--------------|------------------------|
+| [`instalers/windows/`](instalers/windows/) | **`INSTALL.bat`** | `Build-All.ps1` |
+| [`instalers/mac/`](instalers/mac/) | `install-easy.sh` | `build-all.sh` |
+| [`instalers/linux/`](instalers/linux/) | `install-easy.sh` | `build-all.sh` |
+
+Built `.exe` / `.app` / `.dmg` / `.tar.gz` files are **not** in git — use [GitHub Releases](https://github.com/LuisMRaimundo/SoundSpectrAnalyse/releases) if you distribute frozen builds.
 
 ## Acknowledgements
 

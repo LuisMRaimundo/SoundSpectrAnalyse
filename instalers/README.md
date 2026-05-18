@@ -1,48 +1,39 @@
-# SoundSpectrAnalyse — cross-platform installers (build scripts)
+# SoundSpectrAnalyse — installers
 
-Scripts to build **standalone apps** (no Python on the end user's machine) from the main project source.
+**GitHub:** https://github.com/LuisMRaimundo/SoundSpectrAnalyse
 
-| Folder | Platform | Build on |
-|--------|----------|----------|
-| **[`windows/`](windows/)** | Windows 10/11 | Windows |
-| **[`mac/`](mac/)** | macOS 11+ (Apple Silicon or Intel) | **macOS only** |
-| **[`linux/`](linux/)** | Linux x86_64 | **Linux only** |
+Scripts for **non-Python users** (easy install) and **developers** (PyInstaller portable builds).
 
-**Git:** commit only script files in each folder (not `build/`, `dist/`, `output/`).  
-**Releases:** publish built `.zip` / `.dmg` / `.tar.gz` via [GitHub Releases](https://github.com/LuisMRaimundo/SoundSpectrAnalyse/releases).
+| Folder | Easy install (recommended) | Developer build |
+|--------|---------------------------|-----------------|
+| [`windows/`](windows/) | **`INSTALL.bat`** — Python + pip + shortcuts | `Build-All.ps1` |
+| [`mac/`](mac/) | **`install-easy.sh`** (on macOS) | `build-all.sh` |
+| [`linux/`](linux/) | **`install-easy.sh`** (on Linux) | `build-all.sh` |
 
-## Source code
+## Windows (most users)
 
-Set the project tree explicitly if auto-detection fails:
+1. Open folder `instalers\windows`
+2. Double-click **`INSTALL.bat`**
+3. Wait for completion; use the Desktop shortcut
 
-```bash
-export SOUNDSPECTRANALYSE_SOURCE="/path/to/SoundSpectrAnalyse"
-```
+No command line or Python knowledge required.
 
-Default search order: repository root (when `instalers/` lives inside the clone), then `SoundSpectrAnalyse-main_6` on the Desktop.
-
-## Quick start
-
-```powershell
-# Windows (PowerShell)
-cd windows
-.\Build-All.ps1
-```
+## macOS / Linux
 
 ```bash
-# macOS
-cd mac
-chmod +x *.sh
-./build-all.sh
-
-# Linux
-cd linux
-chmod +x *.sh
-./build-all.sh
+chmod +x install-easy.sh
+./install-easy.sh
 ```
 
-## Notes
+Must be run **on** macOS or Linux respectively.
 
-- Expect **~300 MB–1 GB** per build (NumPy, SciPy, librosa, etc.).
-- **FFmpeg** on PATH may be required for some audio formats.
-- macOS/Linux builds **cannot** be produced from Windows; use a Mac or Linux machine (or CI).
+## What gets installed (easy mode)
+
+- **Python 3.10 or 3.11** (installed automatically on Windows if missing)
+- Project from **GitHub** `main` (or a local copy if found next to `instalers/`)
+- All **`requirements.txt`** libraries in a private virtual environment
+- **Desktop / Start menu** shortcut to the Tk orchestrator GUI
+
+Install location (Windows): `%LocalAppData%\Programs\SoundSpectrAnalyse\`
+
+Built `.exe` / `.app` bundles are optional and live under `output/` (not in git).
