@@ -30,7 +30,7 @@ New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
 
 Write-Host ''
 Write-Host '========================================' -ForegroundColor Cyan
-Write-Host '  SoundSpectrAnalyse — Installer' -ForegroundColor Cyan
+Write-Host '  SoundSpectrAnalyse - Installer' -ForegroundColor Cyan
 Write-Host '  ' $cfg.GitHubRepoUrl -ForegroundColor Cyan
 Write-Host '========================================' -ForegroundColor Cyan
 Write-Host ''
@@ -46,7 +46,7 @@ try {
 Python 3.10 or 3.11 is required and was not found.
 Run this installer again (it will install Python), or install from:
   https://www.python.org/downloads/
-Then tick 'Add python.exe to PATH'.
+Then enable Add python.exe to PATH.
 "@
   }
   Write-InstallLog "Using Python: $pythonExe"
@@ -73,9 +73,9 @@ Repo: $($cfg.GitHubRepoUrl)
 "@ | Set-Content -LiteralPath (Join-Path $InstallRoot 'install-info.txt') -Encoding UTF8
 
   Write-Host ''
-  Write-Host 'SUCCESS — Installation complete.' -ForegroundColor Green
+  Write-Host 'SUCCESS - Installation complete.' -ForegroundColor Green
   Write-Host "  Location: $InstallRoot"
-  Write-Host '  Start: Desktop or Start menu → SoundSpectrAnalyse Orchestrator'
+  Write-Host '  Start: Desktop or Start menu - SoundSpectrAnalyse Orchestrator'
   Write-Host ''
   Write-Host 'Note: Some audio formats need FFmpeg on PATH (optional).'
   Write-Host '      https://ffmpeg.org/download.html'
@@ -84,7 +84,7 @@ Repo: $($cfg.GitHubRepoUrl)
   if (-not $NoLaunch) {
     $launch = Join-Path $InstallRoot 'Launch-SoundSpectrAnalyse.bat'
     if (Test-Path $launch) {
-      Write-InstallLog 'Launching SoundSpectrAnalyse…'
+      Write-InstallLog 'Launching SoundSpectrAnalyse...'
       Start-Process -FilePath $launch
     }
   }
