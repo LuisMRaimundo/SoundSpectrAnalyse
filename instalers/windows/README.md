@@ -20,7 +20,9 @@
    - On https://github.com/LuisMRaimundo/SoundSpectrAnalyse choose **Code → Download ZIP**, extract, and open **`instalers\windows`**.
 
 2. **Start installation**
-   - Double-click **`INSTALL.bat`**.
+   - Double-click **`INSTALL.bat`** or **`START-HERE.bat`** (same installer).
+   - **Do not** use an old ZIP saved on your PC before May 2026 — download fresh from GitHub (step 1).
+   - **`SoundSpectrAnalyse Orchestrator.exe` is not required** for normal install (that file is only for developer portable builds).
    - If Windows SmartScreen appears, choose **More info → Run anyway** (local, unsigned script).
 
 3. **Wait for completion**
@@ -67,8 +69,10 @@ Some formats require **FFmpeg** on the system PATH:
 
 | Issue | Action |
 |-------|--------|
+| **Missing .exe** / Build-All.ps1 message | You opened the wrong script or an **old** copy. Use **`INSTALL.bat`** from a **fresh** GitHub download. `Install-SoundSpectrAnalyse.cmd` also forwards to `INSTALL.bat` if no `.exe` is present. |
+| **PowerShell: string missing terminator** | Old installer files (Unicode characters). Re-download the repo from GitHub and run **`INSTALL.bat`** from `instalers\windows`. |
 | Window closes immediately | Run **`INSTALL.bat`** again and read messages; or open `install.log` (path above). |
-| Python error | Install **Python 3.11** from https://www.python.org/downloads/ — enable **“Add python.exe to PATH”** — run **`INSTALL.bat`** again. |
+| Python error | Install **Python 3.11** from https://www.python.org/downloads/ — enable **Add python.exe to PATH** — run **`INSTALL.bat`** again. |
 | Network error | Check Internet and firewall; the installer downloads from GitHub and PyPI. |
 | pip / package error | Send **`install.log`** to the software maintainer. |
 
