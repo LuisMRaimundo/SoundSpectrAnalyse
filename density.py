@@ -1,5 +1,7 @@
 # density.py - Corrected Version
 
+from __future__ import annotations
+
 """
 Module for calculating spectral density metrics for musical audio analysis.
 Implements weight functions, density calculations, and combined metrics for
