@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Hutchinson-Knopoff provenance artefacts:** moved the default `g(y)` lookup knots to `data/hk1978_g_table.csv` (import-time `numpy.loadtxt`), exposed `dissonance_models.HK_G_TABLE_PROVENANCE`, and added `tests/test_hk_g_table_provenance.py` (provenance non-empty + piecewise monotonic checks).
+- **Dissonance vectorisation guard test:** added `tests/test_dissonance_vectorisation_equivalence.py` to assert numerical equivalence (`atol=1e-12`, `rtol=1e-10`) between broadcast/index-based pair evaluation and the previous nested-loop reference.
+- **Public API reachability test:** added `tests/test_public_api_importable.py` to validate exported names in `density.__all__` and `dissonance_models.__all__`.
+- **Reference register:** added root `REFERENCES.md` with full APA entries used by in-code short citations and naming disclosures.
+
+### Changed
+
+- **Pairwise dissonance internals:** replaced `for i / for j` nested loops in `dissonance_models.py` (`_dissonance_total_and_pairs`, `_dissonance_total_pairs_and_minamp`, `SetharesDissonance._pairwise_sum`) with upper-triangular index arrays (`np.triu_indices`) and pair-array evaluation.
+- **Citation metadata alignment:** updated `CITATION.cff` author metadata/ORCID, funding DOI identifier, and set `version: "3.7.0"` to match the current package version and README acknowledgements block.
+- **Repository spelling hygiene:** renamed installer path `instalers/` to `installers/` and updated installer README path references accordingly (git history follows the rename for path-level redirection).
+
+### Deprecated
+
+- **`bin_width_hz` in `physical_spectral_density`:** parameter is retained for signature compatibility but now emits `DeprecationWarning` when non-`None`; removal is scheduled for a future **4.x** release.
+
+### Documentation
+
+- Added explicit naming disclosure for `effective_partial_density` (`N_eff / N`, Hill q=2 / inverse Herfindahl) in `density.py` and `docs/CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md` under **"Naming caveat: effective_partial_density vs. classical density"**, including divergence note from Krimphoff/Peeters-style density framings.
+- Added model-constant citation comments in `dissonance_models.py` (Sethares; Vassilakis) and explicit "unconstrained design choice" annotation for perceptual density mixing weights (`0.6/0.4`).
+
+### Added
+
 - **`Legacy_Density_Metrics` (per-note export, default ON):** every **`spectral_analysis.xlsx`** now includes a dedicated sheet with **`Density Metric`**, **`Spectral Density Metric`**, **`Filtered Density Metric`**, **`Combined Density Metric`**, and **`spectral_masking_enabled`** (`False` — no v5 masking GUI in v6). Stage 2 **`read_excel_metrics`** merges this sheet so **`Weighted Combined Metric`** is recomputed from real SDM/FDM on **`Diagnostic_Metrics`** / **`Legacy_Compatibility`**, not from zero placeholders.
 - **Research workbook (`compiled_density_metrics_research.xlsx`):** **`Spectral_Density_Metrics`** includes **`Combined Density Metric`**, derived **`density_weighted_sum_cdm_mean`** = \((\texttt{density\_weighted\_sum} + \texttt{Combined Density Metric}) / 2\), soft column highlights (blue / yellow / lavender), and merge from compiled **`Legacy_Compatibility`**. Tests: **`tests/test_legacy_density_export.py`**, extended **`tests/test_research_density_export.py`**.
 
