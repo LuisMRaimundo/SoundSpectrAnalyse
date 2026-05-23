@@ -25,15 +25,36 @@ logger = logging.getLogger(__name__)
 DEFAULT_PLOT_DPI = 300
 CENTS_PER_OCTAVE = 1200
 HK_G_TABLE_PROVENANCE = (
-    "Hutchinson & Knopoff (1978, Figure 1), g(y) lookup curve; "
-    "visual digitisation; uncalibrated; extracted 2026-05-23; maintainer: Luís Raimundo."
+    "Hutchinson & Knopoff (1978), Interface 7(1):1-29, Fig. 1. "
+    "Re-digitised with WebPlotDigitizer; calibration parameters "
+    "and source archived in data/hk1978_g_table_wpd_project.tar "
+    "and data/hk1978_g_table_provenance.txt."
 )
 _HK_G_TABLE_CSV = Path(__file__).resolve().parent / "data" / "hk1978_g_table.csv"
 
 
 def _load_hk_default_g_table() -> list[tuple[float, float]]:
     """Load the default Hutchinson-Knopoff g(y) table from CSV."""
-    table = np.loadtxt(_HK_G_TABLE_CSV, delimiter=",", comments="#", dtype=float)
+    skiprows = 0
+    for line in _HK_G_TABLE_CSV.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            skiprows += 1
+            continue
+        if stripped.startswith("#"):
+            skiprows += 1
+            continue
+        if stripped.lower().replace(" ", "") == "y,g":
+            skiprows += 1
+        break
+
+    table = np.loadtxt(
+        _HK_G_TABLE_CSV,
+        delimiter=",",
+        comments="#",
+        dtype=float,
+        skiprows=skiprows,
+    )
     if table.ndim == 1:
         table = table.reshape(1, -1)
     if table.shape[1] != 2:

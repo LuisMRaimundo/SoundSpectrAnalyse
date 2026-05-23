@@ -127,7 +127,7 @@ def test_hutchinson_cbw() -> None:
 # Case HK-2
 def test_hutchinson_g_table_knot() -> None:
     model = dm.HutchinsonKnopoffDissonance()
-    npt.assert_allclose(model.g(0.25), 0.60, rtol=0.0, atol=1e-12)
+    npt.assert_allclose(model.g(0.25), 1.00, rtol=0.0, atol=1e-12)
 
 
 # Case HK-3

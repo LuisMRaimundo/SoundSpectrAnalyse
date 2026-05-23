@@ -1,0 +1,39 @@
+Hutchinson–Knopoff g(y) digitisation metadata
+
+Source:
+Hutchinson, W., & Knopoff, L. (1978). The acoustic component of Western consonance. Interface, 7(1), 1–29. https://doi.org/10.1080/09298217808570246
+
+Figure:
+Figure 1, article page 4 / PDF page 6.
+
+Curve:
+Dissonance weighting factor g as a function of |f1 − f2| / CBW(f̄), after Plomp & Levelt (1965).
+
+Axis calibration:
+x-axis: 0.0 to 1.2
+y-axis: 0.0 to 1.0
+
+Extraction method:
+Programmatic visual redigitisation from the supplied PDF image crop, using the graph frame as calibration reference and extracting the dark curve pixels. A manual peak anchor was added at approximately y = 0.250, g = 1.000 because the curve touches/merges with the top plot border in the scan.
+
+Number of extracted table points:
+49
+
+Image source:
+Cropped PNG from the uploaded Hutchinson & Knopoff PDF.
+
+Image files used:
+hutchinson1978_fig1_plot_area_300dpi.png
+hutchinson1978_fig1_crop_300dpi.png
+
+Image resolution:
+The working crop was generated at nominal 300 dpi from the PDF page image. Working plot-area image dimensions: 915 x 810 px.
+
+Digitisation date:
+2026-05-23
+
+Digitised by:
+Luis Raimundo / assisted redigitisation in ChatGPT from the uploaded PDF.
+
+Status:
+Visual redigitisation from the published curve. These values are reconstructed approximations, not an original numerical table supplied by Hutchinson & Knopoff. The accompanying TAR file is an audit archive containing the source image crop, the CSV table, calibration metadata, and extraction notes. It is not a native WebPlotDigitizer project file produced by the WebPlotDigitizer browser interface.

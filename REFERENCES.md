@@ -2,7 +2,7 @@
 
 Hill, M. O. (1973). Diversity and evenness: A unifying notation and its consequences. *Ecology, 54*(2), 427-432. https://doi.org/10.2307/1934352
 
-Hutchinson, W., & Knopoff, L. (1978). The acoustic component of Western consonance. *Interface, 7*(1), 1-29.
+Hutchinson, W., & Knopoff, L. (1978). The acoustic component of Western consonance. *Interface, 7*(1), 1–29.
 
 Jost, L. (2006). Entropy and diversity. *Oikos, 113*(2), 363-375. https://doi.org/10.1111/j.2006.0030-1299.14714.x
 
