@@ -1,0 +1,8 @@
+{
+  "analysis_id": "sample_clean_case",
+  "version": "local-fixture",
+  "metrics": {
+    "harmonic_energy_percentage": 71.0,
+    "inharmonic_energy_percentage": 29.0
+  }
+}

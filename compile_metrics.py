@@ -2144,7 +2144,7 @@ def extract_density_component_sum(
     Weighting-function semantics (single source of truth)::
 
         linear -> D = SUM(Amplitude_raw)
-        log    -> D = SUM(LOG10(1 + Amplitude_raw)) per row (no band-total log)
+        log    -> D = LOG10(1 + SUM(Amplitude_raw))
         power  -> D = SUM(Power_raw)
                      (or SUM(Amplitude_raw ** 2) if Power_raw absent)
 
@@ -2304,7 +2304,7 @@ def extract_density_component_sum(
             return result
         column_used = str(amp_col)
         series = pd.to_numeric(df[amp_col], errors="coerce")
-        sum_strategy = "sum_log10_1p_per_amplitude_raw"
+        sum_strategy = "log10_1p_sum_amplitude_raw"
     elif wf == "power":
         if power_col is not None:
             column_used = str(power_col)
@@ -2355,9 +2355,7 @@ def extract_density_component_sum(
 
     raw_total = float(series.to_numpy(dtype=float)[mask].sum())
     if wf == "log":
-        amps_log = series.to_numpy(dtype=float, copy=False)[mask]
-        amps_log = np.maximum(amps_log, 0.0)
-        d_value = float(np.sum(np.log10(1.0 + amps_log)))
+        d_value = float(np.log10(1.0 + max(0.0, raw_total)))
     else:
         d_value = raw_total
 
@@ -2696,9 +2694,10 @@ def extract_density_components_from_per_note_workbook(
     # "log", and Amplitude_display_scaled is never read at all.
     # ------------------------------------------------------------------
     wf_op = _compile_operator_weight_function_key(weight_function)
-    wf_h = extract_density_component_sum(p, "Harmonic Spectrum", wf_op)
-    wf_i = extract_density_component_sum(p, "Inharmonic Spectrum", wf_op)
-    wf_s = extract_density_component_sum(p, "Sub-bass band", wf_op)
+    wf_components = "power" if basis == "power_sum" else wf_op
+    wf_h = extract_density_component_sum(p, "Harmonic Spectrum", wf_components)
+    wf_i = extract_density_component_sum(p, "Inharmonic Spectrum", wf_components)
+    wf_s = extract_density_component_sum(p, "Sub-bass band", wf_components)
 
     result["density_weight_function"] = str(wf_h.get("weight_function") or wf_op)
     result["harmonic_density_sum"] = wf_h.get("D")
@@ -2723,17 +2722,17 @@ def extract_density_components_from_per_note_workbook(
         if s
     )
     result["density_component_sum_source"] = combined_source
-    if wf_op in DENSITY_WEIGHT_FUNCTION_VALID and wf_op == "log":
+    if wf_components in DENSITY_WEIGHT_FUNCTION_VALID and wf_components == "log":
         result["density_formula"] = (
             "density_metric_raw = D_H*w_H + D_I*w_I + D_S*w_S; "
-            "D_band = SUM(log10(1 + Amplitude_raw))."
+            "D_band = log10(1 + SUM(Amplitude_raw))."
         )
-    elif wf_op in DENSITY_WEIGHT_FUNCTION_VALID and wf_op == "power":
+    elif wf_components in DENSITY_WEIGHT_FUNCTION_VALID and wf_components == "power":
         result["density_formula"] = (
             "density_metric_raw = D_H*w_H + D_I*w_I + D_S*w_S; "
             "D_band = SUM(Power_raw) (fallback SUM(Amplitude_raw**2))."
         )
-    elif wf_op in DENSITY_WEIGHT_FUNCTION_VALID:
+    elif wf_components in DENSITY_WEIGHT_FUNCTION_VALID:
         result["density_formula"] = (
             "density_metric_raw = D_H*w_H + D_I*w_I + D_S*w_S; "
             "D_band = SUM(Amplitude_raw)."
@@ -2742,7 +2741,7 @@ def extract_density_components_from_per_note_workbook(
         result["density_formula"] = (
             "density_metric_raw = D_H*w_H + D_I*w_I + D_S*w_S; "
             f"D_band = density.apply_density_metric(Amplitude_raw_vector, "
-            f"weight_function={wf_op!r}) per spectrum sheet."
+            f"weight_function={wf_components!r}) per spectrum sheet."
         )
 
     # Canonical per-band D values (weight_function-aware) replace the

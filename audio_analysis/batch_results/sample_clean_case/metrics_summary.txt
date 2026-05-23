@@ -1,0 +1,2 @@
+Metrics summary (clean sample fixture)
+No external symbolic-engine references.
