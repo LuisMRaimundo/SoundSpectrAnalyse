@@ -36,6 +36,7 @@ def test_canonical_f0_prefers_final_over_initial() -> None:
     ap.f0_final = 442.0
     ap.f0_final_source = "prior_constrained_harmonic_fit"
     ap.f0_final_method = "prior_constrained_harmonic_fit"
+    ap.f0_fit_accepted = True
     ap.f0_initial = 440.0
     ap.f0_prior_hz = 440.0
     hz, src = AudioProcessor._canonical_f0_hz_for_analysis(ap)
@@ -57,3 +58,16 @@ def test_harmonic_validation_report_f0_source_not_minimum_harmonic() -> None:
     }
     assert rep["f0_source"] != "minimum_harmonic_partial_frequency"
     assert "minimum_harmonic" not in rep["f0_source"]
+
+
+def test_canonical_f0_triplet_marks_nominal_fallback_as_not_acoustically_verified() -> None:
+    ap = AudioProcessor.__new__(AudioProcessor)
+    ap.f0_final = 220.0
+    ap.f0_final_source = "filename_note_nominal_fallback_fit_rejected"
+    ap.f0_fit_accepted = False
+    ap.f0_initial = 220.0
+    ap.f0_prior_hz = 220.0
+    hz, src, status = AudioProcessor._canonical_f0_triplet_for_analysis(ap)
+    assert hz == pytest.approx(220.0)
+    assert "fallback" in src or "initial" in src
+    assert status == "nominal_fallback_used_not_acoustically_verified"

@@ -97,6 +97,7 @@ These columns are populated at **compile time** from per-note spectrum sheets an
 with \(w_H, w_I, w_S\) = `component_harmonic_energy_ratio`, `component_inharmonic_energy_ratio`, `component_subbass_energy_ratio`.
 
 - **`density_metric_raw`** on the compiled row uses the **same formula** and is numerically equal to **`density_weighted_sum`** when extraction status is `ok`.
+  It is diagnostic (alias: `energy_weighted_component_density_diagnostic`) and not the publication-default scalar.
 - **`density_log_weighted`** = \(\log_{10}(1 + \text{density\_weighted\_sum})\).
 - **`harmonic_amplitude_sum`**, **`inharmonic_amplitude_sum`**, **`subbass_amplitude_sum`** remain **linear** diagnostic sums of `Amplitude_raw`; they do **not** change when you switch from linear to log weighting. Use **`harmonic_density_sum`** (and the weighted sum above) for weight-function sensitivity.
 - **`density_metric_normalized`** = `density_metric_raw / max(density_metric_raw)` **within the current compiled workbook** only — do not compare normalized values across runs that used different `weight_function` keys unless you re-normalise externally.
@@ -161,20 +162,13 @@ Built read-only by **`tools/export_research_density_workbook.py`** (and automati
 
 **Merge sources (in order):** `Density_Metrics`, `Canonical_Metrics`, `Diagnostic_Metrics`, **`Legacy_Compatibility`**, `Validation_Metrics`, `Debug_Counts`, `Per_Note_Processing_Metadata`.
 
-**`Spectral_Density_Metrics` sheet — derived column**
+**`Spectral_Density_Metrics` sheet — deprecated optional derived column**
 
+The blend
 \[
 \text{density\_weighted\_sum\_cdm\_mean} = \frac{\text{density\_weighted\_sum} + \text{Combined Density Metric}}{2}
 \]
-
-- **Editorial / exploratory only** — not a canonical acoustic measure (different scales and definitions; CDM often dominates the average numerically).
-- Documented on the research workbook **README** sheet.
-- **Column highlights** (header + data cells, research file only):
-  - `density_weighted_sum` — soft blue (`#D6E4F0`)
-  - `Combined Density Metric` — soft yellow (`#FFF2CC`)
-  - `density_weighted_sum_cdm_mean` — soft lavender (`#E8D5F2`)
-
-Use **`density_weighted_sum`** for v6 compile contract questions; **`Combined Density Metric`** for legacy dynamic contrast; the **mean** when a single plotting column is desired — see **`docs/CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md`** §9.
+is **not exported by default**. It is available only with `--include-legacy-cdm-mean` and is deprecated legacy/editorial output (not acoustically/dimensionally valid final scalar).
 
 ---
 

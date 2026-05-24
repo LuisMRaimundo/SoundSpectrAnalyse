@@ -129,6 +129,9 @@ def audit_f0_provenance(canonical: pd.DataFrame, diagnostic: pd.DataFrame) -> Li
         if acc is False:
             f0f = row.get("f0_final_hz")
             f0n = row.get("f0_nominal_hz")
+            af0 = _to_str(row.get("acoustic_f0_status", ""))
+            if not af0 and dr is not None:
+                af0 = _to_str(dr.get("acoustic_f0_status", ""))
             if dr is not None:
                 if f0n is None or (isinstance(f0n, float) and pd.isna(f0n)):
                     f0n = dr.get("f0_nominal_hz")
@@ -140,6 +143,11 @@ def audit_f0_provenance(canonical: pd.DataFrame, diagnostic: pd.DataFrame) -> Li
                             f"blocker:rejected fit but f0_final_hz != f0_nominal_hz without nominal fallback "
                             f"(Note={note!r} f0_final={f0f!r} f0_nominal={f0n!r} effective_final_source={effective_final!r})"
                         )
+            if af0 and af0 != "nominal_fallback_used_not_acoustically_verified":
+                failures.append(
+                    f"blocker:f0_fit_accepted False but acoustic_f0_status is {af0!r} "
+                    f"(expected nominal_fallback_used_not_acoustically_verified) (Note={note!r})"
+                )
     return failures
 
 

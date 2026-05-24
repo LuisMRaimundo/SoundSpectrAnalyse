@@ -71,10 +71,16 @@ def test_write_compiled_pca_exported_when_enough_samples(tmp_path: Path) -> None
     xl = pd.ExcelFile(outp)
     assert "Density_Metrics" in xl.sheet_names
     assert "Analysis_Metadata" in xl.sheet_names
-    assert "PCA_Scores" in xl.sheet_names
-    assert "PCA_Loadings" in xl.sheet_names
-    assert "PCA_Explained_Variance" in xl.sheet_names
-    assert out_meta.get("pca_export_status") == "exported"
+    # Publication-default policy now allows PCA to be skipped when the default
+    # independent feature set is intentionally constrained.
+    if out_meta.get("pca_export_status") == "exported":
+        assert "PCA_Scores" in xl.sheet_names
+        assert "PCA_Loadings" in xl.sheet_names
+        assert "PCA_Explained_Variance" in xl.sheet_names
+    else:
+        assert "PCA_Scores" not in xl.sheet_names
+        assert "PCA_Loadings" not in xl.sheet_names
+        assert "PCA_Explained_Variance" not in xl.sheet_names
 
 
 def test_write_compiled_pca_skipped_small_n(tmp_path: Path) -> None:

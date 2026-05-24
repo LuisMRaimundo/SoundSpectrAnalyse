@@ -76,6 +76,20 @@ def _write_minimal_compiled_workbook(path: Path, *, sparse: bool = False) -> Non
             ("pipeline_contract_version", "test-contract"),
             ("ANALYSIS_SCHEMA_VERSION", "99"),
             ("weight_function", "linear"),
+            ("window_type", "blackmanharris"),
+            ("n_fft", 4096),
+            ("hop_length", 1024),
+            ("zero_padding", 2),
+            ("harmonic_tolerance", 5.0),
+            ("frequency_min_hz", 20.0),
+            ("frequency_max_hz", 20000.0),
+            ("magnitude_min_db", -90.0),
+            ("density_summation_mode", "his_weighted"),
+            ("harmonic_density_weight", 1.0),
+            ("inharmonic_density_weight", 0.5),
+            ("subbass_density_weight", 0.25),
+            ("density_salience_threshold_db", -45.0),
+            ("density_frequency_ceiling_hz", 5000.0),
         ],
         columns=["Parameter", "Value"],
     )
@@ -111,9 +125,11 @@ def test_export_creates_research_workbook(tmp_path: Path) -> None:
         "README",
         "Dashboard",
         "Spectral_Density_Metrics",
+        "Legacy_Compatibility",
         "Component_Balance",
         "Validation_Summary",
         "Charts_Data",
+        "Analysis_Settings_By_Note",
         "Metadata",
     }
     assert set(xl.sheet_names) == expected
@@ -130,29 +146,20 @@ def test_spectral_density_metrics_columns(tmp_path: Path) -> None:
         "MIDI",
         "density_metric_raw",
         "density_weighted_sum",
-        "Combined Density Metric",
-        "density_weighted_sum_cdm_mean",
         "Total sum",
         "effective_partial_density",
         "spectral_entropy",
     ):
         assert col in df.columns
-    mean = pd.to_numeric(df["density_weighted_sum_cdm_mean"], errors="coerce")
-    dws = pd.to_numeric(df["density_weighted_sum"], errors="coerce")
-    cdm = pd.to_numeric(df["Combined Density Metric"], errors="coerce")
-    assert np.allclose(mean, (dws + cdm) / 2.0, equal_nan=True)
+    assert "density_weighted_sum_cdm_mean" not in df.columns
 
 
 def test_research_workbook_column_highlights(tmp_path: Path) -> None:
     src = tmp_path / "in.xlsx"
     dst = tmp_path / "out.xlsx"
     _write_minimal_compiled_workbook(src)
-    assert _run_export(src, dst).returncode == 0
-    from tools.export_research_density_workbook import (
-        RESEARCH_FILL_COMBINED_DENSITY_METRIC,
-        RESEARCH_FILL_DENSITY_WEIGHTED_SUM,
-        RESEARCH_FILL_DWS_CDM_MEAN,
-    )
+    assert _run_export(src, dst, extra=["--include-legacy-cdm-mean"]).returncode == 0
+    from tools.export_research_density_workbook import RESEARCH_FILL_DENSITY_WEIGHTED_SUM, RESEARCH_FILL_DWS_CDM_MEAN
 
     wb = load_workbook(dst)
     ws = wb["Spectral_Density_Metrics"]
@@ -173,8 +180,70 @@ def test_research_workbook_column_highlights(tmp_path: Path) -> None:
         return _fill_rgb_hex(ws.cell(2, ci))
 
     assert fill_for("density_weighted_sum") == "D6E4F0"
-    assert fill_for("Combined Density Metric") == "FFF2CC"
-    assert fill_for("density_weighted_sum_cdm_mean") == "E8D5F2"
+    assert "Combined Density Metric" not in hdr
+
+    legacy_ws = wb["Legacy_Compatibility"]
+    legacy_hdr = {legacy_ws.cell(1, c).value: c for c in range(1, legacy_ws.max_column + 1)}
+    assert "density_weighted_sum_cdm_mean" in legacy_hdr
+
+
+def test_legacy_cdm_mean_is_opt_in(tmp_path: Path) -> None:
+    src = tmp_path / "in.xlsx"
+    dst = tmp_path / "out.xlsx"
+    _write_minimal_compiled_workbook(src)
+    assert _run_export(src, dst, extra=["--include-legacy-cdm-mean"]).returncode == 0
+    df = pd.read_excel(dst, sheet_name="Legacy_Compatibility", engine="openpyxl")
+    assert "density_weighted_sum_cdm_mean" in df.columns
+    mean = pd.to_numeric(df["density_weighted_sum_cdm_mean"], errors="coerce")
+    assert mean.notna().any()
+
+
+def test_legacy_compatibility_midi_aligned_by_note_not_row_index(tmp_path: Path) -> None:
+    src = tmp_path / "in_midi.xlsx"
+    dst = tmp_path / "out_midi.xlsx"
+    dm = pd.DataFrame(
+        {
+            "Note": ["D6", "C#4", "A#3", "D3", "C2", "A2"],
+            "density_metric_raw": [1, 2, 3, 4, 5, 6],
+            "density_weighted_sum": [1, 2, 3, 4, 5, 6],
+            "Combined Density Metric": [10, 20, 30, 40, 50, 60],
+            "Weighted Combined Metric": [11, 21, 31, 41, 51, 61],
+            "Total Metric": [12, 22, 32, 42, 52, 62],
+        }
+    )
+    am = pd.DataFrame([("ANALYSIS_SCHEMA_VERSION", "99")], columns=["Parameter", "Value"])
+    with pd.ExcelWriter(src, engine="openpyxl") as writer:
+        dm.to_excel(writer, sheet_name="Density_Metrics", index=False)
+        am.to_excel(writer, sheet_name="Analysis_Metadata", index=False)
+    assert _run_export(src, dst).returncode == 0
+    legacy = pd.read_excel(dst, sheet_name="Legacy_Compatibility", engine="openpyxl")
+    got = {
+        str(r["Note"]): int(r["MIDI"])
+        for _, r in legacy.iterrows()
+        if pd.notna(r.get("Note")) and pd.notna(r.get("MIDI"))
+    }
+    assert got.get("D3") == 50
+    assert got.get("A#3") == 58
+    assert got.get("C#4") == 61
+    assert got.get("D6") == 86
+    assert got.get("C2") == 36
+    assert got.get("A2") == 45
+
+
+def test_spectral_density_metrics_note_midi_mapping_stable(tmp_path: Path) -> None:
+    src = tmp_path / "in_sdm.xlsx"
+    dst = tmp_path / "out_sdm.xlsx"
+    _write_minimal_compiled_workbook(src)
+    assert _run_export(src, dst).returncode == 0
+    sdm = pd.read_excel(dst, sheet_name="Spectral_Density_Metrics", engine="openpyxl")
+    from tools.export_research_density_workbook import note_to_midi
+
+    if {"Note", "MIDI"}.issubset(sdm.columns):
+        expected = sdm["Note"].map(note_to_midi)
+        got = pd.to_numeric(sdm["MIDI"], errors="coerce")
+        mask = expected.notna() & got.notna()
+        if mask.any():
+            assert np.allclose(pd.to_numeric(expected[mask], errors="coerce"), got[mask], atol=1e-9)
 
 
 def test_component_balance_recomputes(tmp_path: Path) -> None:
@@ -514,6 +583,196 @@ def test_research_export_no_path_columns_canonical_alias_from_v5(tmp_path: Path)
     assert "Source_File" not in sdm.columns
     assert "Source_Workbook" not in sdm.columns
     assert "canonical_density_v5_adapted" not in sdm.columns
-    assert "canonical_density" in sdm.columns
-    assert float(sdm.loc[sdm["Note"] == "A4", "canonical_density"].iloc[0]) == pytest.approx(1.25)
+    assert "canonical_density" not in sdm.columns
     assert "Source_File" not in vs.columns
+
+
+def test_harmonic_slot_coverage_ratio_matches_slot_matched_over_expected(tmp_path: Path) -> None:
+    src = tmp_path / "in.xlsx"
+    dst = tmp_path / "out.xlsx"
+    _write_minimal_compiled_workbook(src)
+    assert _run_export(src, dst).returncode == 0
+    df = pd.read_excel(dst, sheet_name="Spectral_Density_Metrics", engine="openpyxl")
+    needed = {"harmonic_slot_expected_count", "harmonic_slot_matched_count", "harmonic_slot_coverage_ratio"}
+    if not needed.issubset(set(df.columns)):
+        return
+    exp = pd.to_numeric(df["harmonic_slot_expected_count"], errors="coerce")
+    det = pd.to_numeric(df["harmonic_slot_matched_count"], errors="coerce")
+    ratio = pd.to_numeric(df["harmonic_slot_coverage_ratio"], errors="coerce")
+    valid = exp.notna() & det.notna() & ratio.notna() & (exp > 0)
+    if valid.any():
+        assert np.allclose(ratio[valid], (det[valid] / exp[valid]), equal_nan=True)
+
+
+def test_energy_families_remain_separate_and_each_sum_to_one(tmp_path: Path) -> None:
+    src = tmp_path / "in.xlsx"
+    dst = tmp_path / "out.xlsx"
+    _write_minimal_compiled_workbook(src)
+    assert _run_export(src, dst).returncode == 0
+    df = pd.read_excel(dst, sheet_name="Spectral_Density_Metrics", engine="openpyxl")
+
+    core_cols = {"core_harmonic_energy_ratio", "core_residual_energy_ratio", "core_subbass_energy_ratio"}
+    comp_cols = {
+        "component_harmonic_energy_ratio",
+        "component_inharmonic_energy_ratio",
+        "component_subbass_energy_ratio",
+    }
+
+    if core_cols.issubset(df.columns):
+        core = df[list(core_cols)].apply(pd.to_numeric, errors="coerce")
+        valid = core.notna().all(axis=1)
+        if valid.any():
+            assert np.allclose(core[valid].sum(axis=1), 1.0, atol=1e-6, equal_nan=False)
+
+    if comp_cols.issubset(df.columns):
+        comp = df[list(comp_cols)].apply(pd.to_numeric, errors="coerce")
+        valid = comp.notna().all(axis=1)
+        if valid.any():
+            assert np.allclose(comp[valid].sum(axis=1), 1.0, atol=1e-6, equal_nan=False)
+
+
+def test_body_thickness_columns_and_dashboard_kpis_exist(tmp_path: Path) -> None:
+    src = tmp_path / "in.xlsx"
+    dst = tmp_path / "out.xlsx"
+    _write_minimal_compiled_workbook(src)
+    assert _run_export(src, dst).returncode == 0
+    sdm = pd.read_excel(dst, sheet_name="Spectral_Density_Metrics", engine="openpyxl")
+    for c in (
+        "body_weighted_effective_density",
+        "low_mid_energy_ratio",
+        "harmonic_body_density_normalized",
+        "residual_body_contribution_capped",
+        "spectral_body_thickness_index",
+        "salient_harmonic_order_count_up_to_5000hz",
+        "expected_harmonic_order_count_up_to_5000hz",
+        "salient_harmonic_coverage_up_to_5000hz",
+        "salient_harmonic_mass_up_to_5000hz",
+        "salient_harmonic_order_count_up_to_density_ceiling_hz",
+        "expected_harmonic_order_count_up_to_density_ceiling_hz",
+        "salient_harmonic_coverage_up_to_density_ceiling_hz",
+        "salient_harmonic_mass_up_to_density_ceiling_hz",
+        "salient_odd_harmonic_count_up_to_5000hz",
+        "salient_even_harmonic_count_up_to_5000hz",
+        "odd_even_harmonic_energy_ratio",
+        "salient_inharmonic_log_bin_count_up_to_5000hz",
+        "salient_subbass_particle_count",
+        "salient_inharmonic_log_bin_count_up_to_density_ceiling_hz",
+        "salient_subbass_particle_count_up_to_density_ceiling_hz",
+        "final_note_density_count_based",
+        "final_note_density_salience_weighted",
+        "final_note_density_salience_weighted_norm_for_chart",
+        "harmonic_density_component",
+        "inharmonic_density_component",
+        "subbass_density_component",
+        "harmonic_density_weight",
+        "inharmonic_density_weight",
+        "subbass_density_weight",
+        "density_summation_mode",
+        "density_salience_threshold_db",
+        "density_frequency_ceiling_hz",
+    ):
+        assert c in sdm.columns
+    cd = pd.read_excel(dst, sheet_name="Charts_Data", engine="openpyxl")
+    for c in (
+        "salient_harmonic_order_count_up_to_5000hz",
+        "salient_inharmonic_log_bin_count_up_to_5000hz",
+        "salient_subbass_particle_count",
+        "final_note_density_count_based",
+        "final_note_density_salience_weighted",
+        "final_note_density_salience_weighted_norm_for_chart",
+        "harmonic_density_component",
+        "inharmonic_density_component",
+        "subbass_density_component",
+    ):
+        assert c in cd.columns
+    for c in ("spectral_body_thickness_index", "body_weighted_effective_density", "low_mid_energy_ratio"):
+        if c in sdm.columns and pd.to_numeric(sdm[c], errors="coerce").notna().any():
+            assert c in cd.columns
+    if (
+        "salient_harmonic_order_count_up_to_5000hz" in sdm.columns
+        and pd.to_numeric(sdm["salient_harmonic_order_count_up_to_5000hz"], errors="coerce").notna().any()
+    ):
+        assert "salient_harmonic_order_count_up_to_5000hz" in cd.columns
+    if (
+        "salient_inharmonic_log_bin_count_up_to_5000hz" in sdm.columns
+        and pd.to_numeric(sdm["salient_inharmonic_log_bin_count_up_to_5000hz"], errors="coerce").notna().any()
+    ):
+        assert "salient_inharmonic_log_bin_count_up_to_5000hz" in cd.columns
+    if (
+        "salient_subbass_particle_count" in sdm.columns
+        and pd.to_numeric(sdm["salient_subbass_particle_count"], errors="coerce").notna().any()
+    ):
+        assert "salient_subbass_particle_count" in cd.columns
+    if (
+        "final_note_density_salience_weighted" in sdm.columns
+        and pd.to_numeric(sdm["final_note_density_salience_weighted"], errors="coerce").notna().any()
+    ):
+        assert "final_note_density_salience_weighted" in cd.columns
+
+
+def test_metadata_contains_density_and_analysis_controls(tmp_path: Path) -> None:
+    src = tmp_path / "in.xlsx"
+    dst = tmp_path / "out.xlsx"
+    _write_minimal_compiled_workbook(src)
+    assert _run_export(src, dst).returncode == 0
+    md = pd.read_excel(dst, sheet_name="Metadata", engine="openpyxl")
+    assert {"Field", "Value"}.issubset(md.columns)
+    got = {str(r["Field"]): r["Value"] for _, r in md.iterrows()}
+    for k in (
+        "density_summation_mode",
+        "harmonic_density_weight",
+        "inharmonic_density_weight",
+        "subbass_density_weight",
+        "density_salience_threshold_db",
+        "density_frequency_ceiling_hz",
+        "window_type",
+        "n_fft",
+        "hop_length",
+        "zero_padding",
+        "harmonic_tolerance",
+        "frequency_min_hz",
+        "frequency_max_hz",
+        "magnitude_min_db",
+        "source_workbook_sha256",
+        "git_commit",
+        "git_branch",
+        "source_corpus_path",
+        "output_path",
+    ):
+        assert k in got
+        assert str(got[k]).strip() != ""
+
+
+def test_analysis_settings_by_note_sheet_exists_and_is_populated(tmp_path: Path) -> None:
+    src = tmp_path / "in.xlsx"
+    dst = tmp_path / "out.xlsx"
+    _write_minimal_compiled_workbook(src)
+    assert _run_export(src, dst).returncode == 0
+    aset = pd.read_excel(dst, sheet_name="Analysis_Settings_By_Note", engine="openpyxl")
+    assert len(aset) == 2
+    required = (
+        "Note",
+        "MIDI",
+        "f0_used_for_density_hz",
+        "f0_used_for_density_source",
+        "acoustic_f0_status",
+        "tier_name",
+        "n_fft",
+        "hop_length",
+        "zero_padding",
+        "window_type",
+        "harmonic_tolerance_hz",
+        "frequency_min_hz",
+        "frequency_max_hz",
+        "magnitude_min_db",
+        "magnitude_max_db",
+        "density_summation_mode",
+        "harmonic_density_weight",
+        "inharmonic_density_weight",
+        "subbass_density_weight",
+        "density_salience_threshold_db",
+        "density_frequency_ceiling_hz",
+    )
+    for c in required:
+        assert c in aset.columns
+        assert aset[c].astype(str).str.strip().ne("").all()

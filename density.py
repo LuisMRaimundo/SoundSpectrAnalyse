@@ -1526,6 +1526,7 @@ def compute_harmonic_effective_power_density(
         "harmonic_effective_power_density_max_amplitude": float("nan"),
         "harmonic_effective_power_density_total_power": float("nan"),
         "harmonic_effective_power_density_normalized_by_harmonic_count": float("nan"),
+        "harmonic_effective_power_density_normalized_by_expected_slots": float("nan"),
     }
 
     def _finish(status: str) -> Dict[str, Any]:
@@ -1615,7 +1616,129 @@ def compute_harmonic_effective_power_density(
     out["harmonic_effective_power_density_max_amplitude"] = float(np.max(a_valid))
     out["harmonic_effective_power_density_total_power"] = float(np.sum(pwr))
     out["harmonic_effective_power_density_normalized_by_harmonic_count"] = float(dens / n_comp) if n_comp > 0 else float("nan")
+    try:
+        expected_slots = int(
+            compute_expected_harmonic_slot_count(
+                float(fundamental_freq_hz) if fundamental_freq_hz is not None else float("nan"),
+                float(np.nanmax(np.asarray(frequencies_hz, dtype=float)))
+                if frequencies_hz is not None and np.asarray(frequencies_hz).size
+                else float("nan"),
+            )
+        )
+    except Exception:
+        expected_slots = 0
+    if expected_slots > 0:
+        out["harmonic_effective_power_density_normalized_by_expected_slots"] = float(
+            dens / expected_slots
+        )
     out["harmonic_effective_power_density_status"] = "computed"
+    return out
+
+
+def compute_expected_harmonic_slot_count(
+    f0_hz: float,
+    max_frequency_hz: float,
+) -> int:
+    """Return how many integer harmonic slots can exist up to ``max_frequency_hz``."""
+    try:
+        f0 = float(f0_hz)
+        fmax = float(max_frequency_hz)
+    except (TypeError, ValueError):
+        return 0
+    if not np.isfinite(f0) or f0 <= 0.0 or not np.isfinite(fmax) or fmax <= 0.0:
+        return 0
+    return int(max(0, np.floor(fmax / f0)))
+
+
+def compute_harmonic_occupancy_ratio(
+    harmonic_df: Optional[pd.DataFrame],
+    *,
+    f0_hz: float,
+    max_frequency_hz: float,
+) -> Dict[str, Any]:
+    """Compute harmonic occupancy as detected-valid slots / expected slots."""
+    expected = int(compute_expected_harmonic_slot_count(f0_hz, max_frequency_hz))
+    out: Dict[str, Any] = {
+        "harmonic_occupancy_ratio": float("nan"),
+        "expected_harmonic_slot_count": int(expected),
+        "detected_harmonic_slot_count": 0,
+        "harmonic_occupancy_status": "invalid_f0_or_ceiling",
+    }
+    if expected <= 0 or harmonic_df is None or harmonic_df.empty:
+        if expected > 0:
+            out["harmonic_occupancy_ratio"] = 0.0
+            out["harmonic_occupancy_status"] = "no_harmonic_rows"
+        return out
+
+    df = harmonic_df.copy()
+    if "Frequency (Hz)" not in df.columns:
+        return out
+    freq = pd.to_numeric(df["Frequency (Hz)"], errors="coerce").to_numpy(dtype=float, copy=False)
+    mask = np.isfinite(freq) & (freq > 0.0) & (freq <= float(max_frequency_hz))
+
+    if "include_for_density" in df.columns:
+        inc = df["include_for_density"].astype(str).str.strip().str.lower().isin(("true", "1", "yes"))
+        mask &= inc.to_numpy(dtype=bool, copy=False)
+    if "local_peak_valid" in df.columns:
+        lp = df["local_peak_valid"].astype(str).str.strip().str.lower().isin(("true", "1", "yes"))
+        mask &= lp.to_numpy(dtype=bool, copy=False)
+    if "SNR_dB" in df.columns and "SNR Threshold (dB)" in df.columns:
+        snr = pd.to_numeric(df["SNR_dB"], errors="coerce").to_numpy(dtype=float, copy=False)
+        thr = pd.to_numeric(df["SNR Threshold (dB)"], errors="coerce").to_numpy(dtype=float, copy=False)
+        mask &= np.isfinite(snr) & np.isfinite(thr) & (snr >= thr)
+
+    n_est = np.round(freq / float(f0_hz)).astype(int)
+    n_est = n_est[mask]
+    n_est = n_est[(n_est >= 1) & (n_est <= expected)]
+    detected = int(np.unique(n_est).size) if n_est.size else 0
+    out["detected_harmonic_slot_count"] = detected
+    out["harmonic_occupancy_ratio"] = float(min(1.0, detected / expected)) if expected > 0 else float("nan")
+    out["harmonic_occupancy_status"] = "computed"
+    return out
+
+
+def compute_residual_log_frequency_occupancy(
+    residual_df: Optional[pd.DataFrame],
+    *,
+    min_frequency_hz: float = 20.0,
+    max_frequency_hz: Optional[float] = None,
+    bins_per_octave: int = 24,
+) -> Dict[str, Any]:
+    """Compute log-frequency occupancy of residual rows outside harmonic windows."""
+    out: Dict[str, Any] = {
+        "residual_log_frequency_occupancy": float("nan"),
+        "residual_log_frequency_bin_count": 0,
+        "residual_log_frequency_bin_total": 0,
+        "residual_log_frequency_occupancy_status": "no_data",
+    }
+    if residual_df is None or residual_df.empty or "Frequency (Hz)" not in residual_df.columns:
+        return out
+    f = pd.to_numeric(residual_df["Frequency (Hz)"], errors="coerce").to_numpy(dtype=float, copy=False)
+    fmin = float(min_frequency_hz) if np.isfinite(min_frequency_hz) and min_frequency_hz > 0 else 20.0
+    finite_f = f[np.isfinite(f) & (f > 0.0)]
+    if finite_f.size == 0:
+        return out
+    fmax = (
+        float(max_frequency_hz)
+        if max_frequency_hz is not None and np.isfinite(max_frequency_hz) and max_frequency_hz > fmin
+        else float(np.max(finite_f))
+    )
+    if not np.isfinite(fmax) or fmax <= fmin:
+        return out
+    valid = finite_f[(finite_f >= fmin) & (finite_f <= fmax)]
+    if valid.size == 0:
+        out["residual_log_frequency_occupancy"] = 0.0
+        out["residual_log_frequency_occupancy_status"] = "computed"
+        return out
+    bpo = max(1, int(bins_per_octave))
+    total_bins = max(1, int(np.ceil(np.log2(fmax / fmin) * bpo)))
+    log_pos = np.log2(valid / fmin) * bpo
+    idx = np.clip(np.floor(log_pos).astype(int), 0, total_bins - 1)
+    occupied = int(np.unique(idx).size)
+    out["residual_log_frequency_bin_count"] = occupied
+    out["residual_log_frequency_bin_total"] = total_bins
+    out["residual_log_frequency_occupancy"] = float(occupied / total_bins)
+    out["residual_log_frequency_occupancy_status"] = "computed"
     return out
 
 
@@ -3252,6 +3375,9 @@ __all__ = [
     "compute_rolloff_compensated_harmonic_density",
     "compute_harmonic_effective_power_density",
     "compute_harmonic_effective_power_mass",
+    "compute_expected_harmonic_slot_count",
+    "compute_harmonic_occupancy_ratio",
+    "compute_residual_log_frequency_occupancy",
     
     # Funções principais
     'apply_density_metric',
