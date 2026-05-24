@@ -301,6 +301,9 @@ from density import (
     partial_density_effective_components_bundle,
     aggregate_low_frequency_residual_peak_power,
     aggregate_subbass_noise_peak_power,
+    compute_harmonic_occupancy_ratio,
+    compute_residual_log_frequency_occupancy,
+    compute_expected_harmonic_slot_count,
     # AUDIT FIX (acoustic-physics, Clarinete_mf findings #1 + #2) — the
     # sub-bass aggregator now respects a lower-frequency floor and a
     # window-aware harmonic-protection tolerance to suppress DC bins,
@@ -324,6 +327,10 @@ from dissonance_models import (
 from peak_component_counts import classify_peaks_harmonic_inharmonic_subbass_from_df
 from energy_accounting import describe_component_energy_balance
 from data_integrity import metric_float_or_nan, metric_int_or_nan
+from acoustic_density_core import (
+    canonical_f0_triplet,
+    compute_acoustic_density_descriptors,
+)
 
 # logging base
 logger = logging.getLogger(__name__)
@@ -1742,45 +1749,34 @@ class AudioProcessor:
         return float(f)
 
     def _canonical_f0_hz_for_analysis(self) -> Tuple[float, str]:
-        """Fundamental frequency for peak classification and harmonic validation.
+        """Backward-compatible wrapper returning ``(f0_hz, f0_source)``."""
+        f0_hz, f0_source, _ = self._canonical_f0_triplet_for_analysis()
+        return float(f0_hz), str(f0_source)
 
-        Priority: ``f0_final`` (harmonic-series fit or policy fallback) →
-        ``f0_initial`` (nominal from filename note when set) →
-        ``f0_prior_hz`` → unresolved NaN.
+    def _canonical_f0_triplet_for_analysis(self) -> Tuple[float, str, str]:
+        """Authoritative fundamental-provenance path for acoustic analysis.
 
-        Never uses ``min(harmonic_list_df['Frequency (Hz)'])`` — that conflates
-        partial bins with the acoustic fundamental.
+        Priority:
+        ``f0_final`` (accepted fit or explicit fallback) →
+        ``f0_initial`` / nominal →
+        ``f0_prior_hz`` →
+        unresolved NaN.
         """
-        try:
-            ff = getattr(self, "f0_final", None)
-            if ff is not None:
-                fv = float(ff)
-                if np.isfinite(fv) and fv > 0.0:
-                    src = (
-                        str(getattr(self, "f0_final_source", None) or "").strip()
-                        or str(getattr(self, "f0_final_method", None) or "").strip()
-                        or "f0_final"
-                    )
-                    return fv, src
-        except (TypeError, ValueError):
-            pass
-        try:
-            fi = getattr(self, "f0_initial", None)
-            if fi is not None:
-                iv = float(fi)
-                if np.isfinite(iv) and iv > 0.0:
-                    return iv, "f0_initial_nominal_fallback"
-        except (TypeError, ValueError):
-            pass
-        try:
-            fp = getattr(self, "f0_prior_hz", None)
-            if fp is not None:
-                pv = float(fp)
-                if np.isfinite(pv) and pv > 0.0:
-                    return pv, "f0_prior_hz_fallback"
-        except (TypeError, ValueError):
-            pass
-        return float("nan"), "unresolved"
+        _acc_raw = getattr(self, "f0_fit_accepted", False)
+        _acc = bool(_acc_raw is True or str(_acc_raw).strip().lower() in ("true", "1"))
+        _triplet = canonical_f0_triplet(
+            f0_final_hz=(getattr(self, "f0_final", None) if _acc else None),
+            f0_initial_hz=getattr(self, "f0_initial", None),
+            f0_prior_hz=getattr(self, "f0_prior_hz", None),
+            f0_fit_accepted=_acc,
+            f0_source=(
+                str(getattr(self, "f0_final_source", None) or "").strip()
+                or str(getattr(self, "f0_final_method", None) or "").strip()
+                or str(getattr(self, "f0_source", None) or "").strip()
+                or "f0_final"
+            ),
+        )
+        return float(_triplet.f0_hz), str(_triplet.f0_source), str(_triplet.acoustic_f0_status)
 
     def _finalize_f0_state(
         self,
@@ -2884,6 +2880,12 @@ class AudioProcessor:
         weight_function: str = "linear",
         zero_padding: int = 1,
         time_avg: str = "mean",
+        density_summation_mode: str = "his_weighted",
+        harmonic_density_weight: float = 1.0,
+        inharmonic_density_weight: float = 0.5,
+        subbass_density_weight: float = 0.25,
+        density_salience_threshold_db: float = -45.0,
+        density_frequency_ceiling_hz: float = 5000.0,
         spectral_masking_enabled: bool = False,  # NEW: Control spectral masking (default: OFF for physical model)
         spectral_magnitude_smoothing_enabled: bool = DEFAULT_STFT_MAGNITUDE_SMOOTHING_ENABLED,
         parallel_processing: bool = False,
@@ -2956,6 +2958,12 @@ class AudioProcessor:
         self.time_avg = str(time_avg)
         if self.time_avg not in {"mean", "median", "max"}:
             self.time_avg = "mean"
+        self.density_summation_mode = str(density_summation_mode or "his_weighted").strip().lower()
+        self.harmonic_density_weight = float(harmonic_density_weight)
+        self.inharmonic_density_weight = float(inharmonic_density_weight)
+        self.subbass_density_weight = float(subbass_density_weight)
+        self.density_salience_threshold_db = float(density_salience_threshold_db)
+        self.density_frequency_ceiling_hz = float(density_frequency_ceiling_hz)
 
         # Directories
         results_directory = self.results_directory
@@ -5409,7 +5417,8 @@ class AudioProcessor:
                 harmonic_amps = np.maximum(harmonic_amps, 0.0)
 
             # ------------------- Density Metric — legacy weighted partial activity (not SPL) ---
-            # Primary “fatness” / effective multiplicity: see ``effective_partial_density`` (exported).
+            # Effective multiplicity descriptor: see ``effective_partial_density`` (exported).
+            # Note thickness/body is now represented by spectral_body_thickness_index family.
             # ACOUSTIC FIX: Account for natural frequency-dependent energy decay
             # This produces a smooth descending curve instead of irregular patterns
             # Higher frequencies naturally have less energy (spectral rolloff), so we normalize
@@ -6133,13 +6142,72 @@ class AudioProcessor:
                             f_hz = f_hz[mask.to_numpy()]
                             a_lin = a_lin[mask.to_numpy()]
 
-                        # f0 se tiveres calculado anteriormente; senão, usa None
+                        # Authoritative f0 path from acoustic core: never infer from
+                        # lowest detected harmonic / peak rows.
                         f0_est = None
                         try:
-                            if self.harmonic_list_df is not None and not self.harmonic_list_df.empty:
-                                f0_est = float(self.harmonic_list_df.nsmallest(1, "Frequency (Hz)")["Frequency (Hz)"].iloc[0])
+                            _acc_raw = getattr(self, "f0_fit_accepted", False)
+                            _acc = bool(_acc_raw is True or str(_acc_raw).strip().lower() in ("true", "1"))
+                            _triplet = canonical_f0_triplet(
+                                f0_final_hz=(getattr(self, "f0_final", None) if _acc else None),
+                                f0_initial_hz=getattr(self, "f0_initial", None),
+                                f0_prior_hz=getattr(self, "f0_prior_hz", None),
+                                f0_fit_accepted=_acc,
+                                f0_source=getattr(self, "f0_source", None),
+                            )
+                            if np.isfinite(_triplet.f0_hz) and _triplet.f0_hz > 0.0:
+                                f0_est = float(_triplet.f0_hz)
+                            self.f0_used_for_density_hz = (
+                                float(_triplet.f0_hz) if np.isfinite(_triplet.f0_hz) else float("nan")
+                            )
+                            self.f0_used_for_density_source = str(_triplet.f0_source)
+                            self.acoustic_f0_status = str(_triplet.acoustic_f0_status)
+
+                            _peak_cols = [c for c in ("Frequency (Hz)", "Amplitude", "Magnitude (dB)", "Power") if c in self.complete_list_df.columns]
+                            _peaks_df = self.complete_list_df[_peak_cols].copy()
+                            _desc = compute_acoustic_density_descriptors(
+                                _peaks_df,
+                                f0_hz=float(_triplet.f0_hz),
+                                f0_source=str(_triplet.f0_source),
+                                acoustic_f0_status=str(_triplet.acoustic_f0_status),
+                                f0_fit_accepted=bool(_triplet.f0_fit_accepted),
+                                freq_min_hz=20.0,
+                                freq_max_hz=float(getattr(self, "freq_max", 20000.0) or 20000.0),
+                                density_summation_mode=str(
+                                    getattr(self, "density_summation_mode", "his_weighted") or "his_weighted"
+                                ),
+                                harmonic_density_weight=float(
+                                    getattr(self, "harmonic_density_weight", 1.0)
+                                    if getattr(self, "harmonic_density_weight", 1.0) is not None
+                                    else 1.0
+                                ),
+                                inharmonic_density_weight=float(
+                                    getattr(self, "inharmonic_density_weight", 0.5)
+                                    if getattr(self, "inharmonic_density_weight", 0.5) is not None
+                                    else 0.5
+                                ),
+                                subbass_density_weight=float(
+                                    getattr(self, "subbass_density_weight", 0.25)
+                                    if getattr(self, "subbass_density_weight", 0.25) is not None
+                                    else 0.25
+                                ),
+                                density_salience_threshold_db=float(
+                                    getattr(self, "density_salience_threshold_db", -45.0)
+                                    if getattr(self, "density_salience_threshold_db", -45.0) is not None
+                                    else -45.0
+                                ),
+                                density_frequency_ceiling_hz=float(
+                                    getattr(self, "density_frequency_ceiling_hz", 5000.0)
+                                    if getattr(self, "density_frequency_ceiling_hz", 5000.0) is not None
+                                    else 5000.0
+                                ),
+                            )
+                            self._acoustic_density_desc = dict(_desc)
+                            for _k, _v in _desc.items():
+                                setattr(self, _k, _v)
                         except Exception:
                             f0_est = None
+                            self._acoustic_density_desc = {}
 
                         from density import spectral_density
                         import numpy as np
@@ -6615,7 +6683,12 @@ class AudioProcessor:
                 self.subbass_bin_count = 0
 
             # Peak-based harmonic / inharmonic / sub-bass counts (v7-style on peak list)
-            f0_hz, f0_source = self._canonical_f0_hz_for_analysis()
+            f0_hz, f0_source, acoustic_f0_status = self._canonical_f0_triplet_for_analysis()
+            self.f0_used_for_harmonic_validation_hz = (
+                float(f0_hz) if np.isfinite(float(f0_hz)) else float("nan")
+            )
+            self.f0_used_for_harmonic_validation_source = str(f0_source)
+            self.acoustic_f0_status = str(acoustic_f0_status)
 
             peaks_for_class = self.filtered_list_df
             if peaks_for_class is None or peaks_for_class.empty:
@@ -6694,17 +6767,7 @@ class AudioProcessor:
                 if _pool is None or _pool.empty:
                     _pool = self.complete_list_df
                 if np.isfinite(f0_hz) and f0_hz > 0.0 and _pool is not None and not _pool.empty:
-                    try:
-                        _fv = getattr(self, "f0_final", None)
-                        _f0_validate = (
-                            float(_fv)
-                            if _fv is not None
-                            and np.isfinite(float(_fv))
-                            and float(_fv) > 0.0
-                            else float(f0_hz)
-                        )
-                    except (TypeError, ValueError):
-                        _f0_validate = float(f0_hz)
+                    _f0_validate = float(f0_hz)
                     _sr_v = getattr(self, "sample_rate", None)
                     if _sr_v is None:
                         _sr_v = getattr(self, "sr", None)
@@ -6735,6 +6798,9 @@ class AudioProcessor:
                     _spc = int(
                         _vr.get("non_harmonic_candidate_count", _vr.get("inharmonic_candidate_count", 0)) or 0
                     )
+                    self.harmonic_slot_expected_count = int(_vr.get("harmonic_slot_expected_count", 0) or 0)
+                    self.harmonic_slot_matched_count = int(_vr.get("harmonic_slot_matched_count", 0) or 0)
+                    self.harmonic_slot_missing_count = int(_vr.get("harmonic_slot_missing_count", 0) or 0)
                     try:
                         _f0_rep = float(getattr(self, "f0_final", float("nan")))
                     except (TypeError, ValueError):
@@ -6773,6 +6839,15 @@ class AudioProcessor:
                         "f0_fit_rejection_reason": getattr(
                             self, "f0_fit_rejection_reason", None
                         ),
+                        "f0_used_for_density_hz": getattr(
+                            self, "f0_used_for_density_hz", float("nan")
+                        ),
+                        "f0_used_for_density_source": str(
+                            getattr(self, "f0_used_for_density_source", "")
+                        ),
+                        "f0_used_for_harmonic_validation_hz": float(_f0_validate),
+                        "f0_used_for_harmonic_validation_source": str(f0_source),
+                        "acoustic_f0_status": str(acoustic_f0_status),
                         "harmonic_slot_expected_count": int(_vr.get("harmonic_slot_expected_count", 0) or 0),
                         "harmonic_slot_matched_count": int(_vr.get("harmonic_slot_matched_count", 0) or 0),
                         "harmonic_slot_missing_count": int(_vr.get("harmonic_slot_missing_count", 0) or 0),
@@ -6858,6 +6933,102 @@ class AudioProcessor:
             except Exception as _e_hc:
                 self.logger.debug("harmonic_completeness computation failed: %s", _e_hc)
                 self.harmonic_completeness = 0.0
+
+            _ac_desc = getattr(self, "_acoustic_density_desc", {}) or {}
+            if _ac_desc:
+                self.harmonic_occupancy_ratio = float(_ac_desc.get("harmonic_occupancy_ratio", float("nan")))
+                self.expected_harmonic_slot_count = int(_ac_desc.get("expected_harmonic_slot_count", 0) or 0)
+                self.detected_harmonic_slot_count = int(_ac_desc.get("detected_harmonic_slot_count", 0) or 0)
+                self.harmonic_occupancy_detected_order_count = int(
+                    _ac_desc.get("detected_harmonic_slot_count", 0) or 0
+                )
+                self.harmonic_effective_partial_count = float(
+                    _ac_desc.get("harmonic_effective_partial_count", float("nan"))
+                )
+                self.harmonic_effective_power_density_normalized = float(
+                    _ac_desc.get("harmonic_effective_power_density_normalized", float("nan"))
+                )
+                self.residual_log_frequency_occupancy = float(
+                    _ac_desc.get("residual_log_frequency_occupancy", float("nan"))
+                )
+                self.residual_energy_ratio = float(_ac_desc.get("residual_energy_ratio", float("nan")))
+                self.subbass_energy_ratio = float(_ac_desc.get("subbass_energy_ratio", float("nan")))
+                self.harmonic_energy_ratio = float(_ac_desc.get("harmonic_energy_ratio", float("nan")))
+                self.spectral_entropy = float(_ac_desc.get("spectral_entropy", float("nan")))
+                self.effective_partial_density = float(_ac_desc.get("effective_partial_density", float("nan")))
+                self.energy_weighted_component_density_diagnostic = float(
+                    _ac_desc.get("energy_weighted_component_density_diagnostic", float("nan"))
+                )
+                self.arithmetic_validation_status = str(
+                    _ac_desc.get("arithmetic_validation_status", getattr(self, "arithmetic_validation_status", "passed"))
+                )
+                self.acoustic_validation_status = str(
+                    _ac_desc.get("acoustic_validation_status", getattr(self, "acoustic_validation_status", "passed"))
+                )
+                self.harmonic_occupancy_status = "from_acoustic_density_core"
+                self.residual_log_frequency_occupancy_status = "from_acoustic_density_core"
+            else:
+                try:
+                    _fmax_occ = float(getattr(self, "freq_max", 20000.0) or 20000.0)
+                    _occ = compute_harmonic_occupancy_ratio(
+                        self.harmonic_list_df,
+                        f0_hz=float(f0_hz),
+                        max_frequency_hz=_fmax_occ,
+                    )
+                    self.harmonic_occupancy_ratio = float(
+                        _occ.get("harmonic_occupancy_ratio", float("nan"))
+                    )
+                    self.expected_harmonic_slot_count = int(
+                        _occ.get(
+                            "expected_harmonic_slot_count",
+                            compute_expected_harmonic_slot_count(float(f0_hz), _fmax_occ),
+                        )
+                        or 0
+                    )
+                    self.detected_harmonic_slot_count = int(
+                        _occ.get("detected_harmonic_slot_count", 0) or 0
+                    )
+                    self.harmonic_occupancy_detected_order_count = int(
+                        _occ.get("detected_harmonic_slot_count", 0) or 0
+                    )
+                    self.harmonic_occupancy_status = str(
+                        _occ.get("harmonic_occupancy_status", "unknown")
+                    )
+                except Exception as _e_occ:
+                    self.logger.debug("harmonic_occupancy_ratio computation failed: %s", _e_occ)
+                    self.harmonic_occupancy_ratio = float("nan")
+                    self.expected_harmonic_slot_count = 0
+                    self.detected_harmonic_slot_count = 0
+                    self.harmonic_occupancy_detected_order_count = 0
+                    self.harmonic_occupancy_status = "failed_exception"
+
+                try:
+                    _res_occ = compute_residual_log_frequency_occupancy(
+                        ih_complete_df,
+                        min_frequency_hz=20.0,
+                        max_frequency_hz=float(getattr(self, "freq_max", 20000.0) or 20000.0),
+                        bins_per_octave=24,
+                    )
+                    self.residual_log_frequency_occupancy = float(
+                        _res_occ.get("residual_log_frequency_occupancy", float("nan"))
+                    )
+                    self.residual_log_frequency_bin_count = int(
+                        _res_occ.get("residual_log_frequency_bin_count", 0) or 0
+                    )
+                    self.residual_log_frequency_bin_total = int(
+                        _res_occ.get("residual_log_frequency_bin_total", 0) or 0
+                    )
+                    self.residual_log_frequency_occupancy_status = str(
+                        _res_occ.get("residual_log_frequency_occupancy_status", "unknown")
+                    )
+                except Exception as _e_res_occ:
+                    self.logger.debug(
+                        "residual_log_frequency_occupancy computation failed: %s", _e_res_occ
+                    )
+                    self.residual_log_frequency_occupancy = float("nan")
+                    self.residual_log_frequency_bin_count = 0
+                    self.residual_log_frequency_bin_total = 0
+                    self.residual_log_frequency_occupancy_status = "failed_exception"
 
             # ------------------- Entropia espectral -------------------
             if harmonic_amps.size > 0:
@@ -8508,6 +8679,167 @@ class AudioProcessor:
                 getattr(self, "density_normalization_denominator", None)
             ),
             "effective_partial_density": metric_float_or_nan(getattr(self, "effective_partial_density", None)),
+            "body_weighted_effective_density": metric_float_or_nan(
+                getattr(self, "body_weighted_effective_density", None)
+            ),
+            "low_mid_energy_ratio": metric_float_or_nan(getattr(self, "low_mid_energy_ratio", None)),
+            "harmonic_body_density": metric_float_or_nan(getattr(self, "harmonic_body_density", None)),
+            "expected_harmonic_slots_up_to_5000hz": metric_int_or_nan(
+                getattr(self, "expected_harmonic_slots_up_to_5000hz", None)
+            ),
+            "harmonic_body_density_normalized": metric_float_or_nan(
+                getattr(self, "harmonic_body_density_normalized", None)
+            ),
+            "residual_body_contribution": metric_float_or_nan(
+                getattr(self, "residual_body_contribution", None)
+            ),
+            "residual_body_contribution_capped": metric_float_or_nan(
+                getattr(self, "residual_body_contribution_capped", None)
+            ),
+            "salient_harmonic_order_count_up_to_5000hz": metric_int_or_nan(
+                getattr(self, "salient_harmonic_order_count_up_to_5000hz", None)
+            ),
+            "expected_harmonic_order_count_up_to_5000hz": metric_int_or_nan(
+                getattr(self, "expected_harmonic_order_count_up_to_5000hz", None)
+            ),
+            "salient_harmonic_coverage_up_to_5000hz": metric_float_or_nan(
+                getattr(self, "salient_harmonic_coverage_up_to_5000hz", None)
+            ),
+            "salient_harmonic_mass_up_to_5000hz": metric_float_or_nan(
+                getattr(self, "salient_harmonic_mass_up_to_5000hz", None)
+            ),
+            "salient_harmonic_order_count_up_to_density_ceiling_hz": metric_int_or_nan(
+                getattr(self, "salient_harmonic_order_count_up_to_density_ceiling_hz", None)
+            ),
+            "expected_harmonic_order_count_up_to_density_ceiling_hz": metric_int_or_nan(
+                getattr(self, "expected_harmonic_order_count_up_to_density_ceiling_hz", None)
+            ),
+            "salient_harmonic_coverage_up_to_density_ceiling_hz": metric_float_or_nan(
+                getattr(self, "salient_harmonic_coverage_up_to_density_ceiling_hz", None)
+            ),
+            "salient_harmonic_mass_up_to_density_ceiling_hz": metric_float_or_nan(
+                getattr(self, "salient_harmonic_mass_up_to_density_ceiling_hz", None)
+            ),
+            "salient_odd_harmonic_count_up_to_5000hz": metric_int_or_nan(
+                getattr(self, "salient_odd_harmonic_count_up_to_5000hz", None)
+            ),
+            "salient_even_harmonic_count_up_to_5000hz": metric_int_or_nan(
+                getattr(self, "salient_even_harmonic_count_up_to_5000hz", None)
+            ),
+            "odd_even_harmonic_energy_ratio": metric_float_or_nan(
+                getattr(self, "odd_even_harmonic_energy_ratio", None)
+            ),
+            "salient_inharmonic_log_bin_count_up_to_5000hz": metric_int_or_nan(
+                getattr(self, "salient_inharmonic_log_bin_count_up_to_5000hz", None)
+            ),
+            "salient_subbass_particle_count": metric_int_or_nan(
+                getattr(self, "salient_subbass_particle_count", None)
+            ),
+            "salient_inharmonic_log_bin_count_up_to_density_ceiling_hz": metric_int_or_nan(
+                getattr(self, "salient_inharmonic_log_bin_count_up_to_density_ceiling_hz", None)
+            ),
+            "salient_subbass_particle_count_up_to_density_ceiling_hz": metric_int_or_nan(
+                getattr(self, "salient_subbass_particle_count_up_to_density_ceiling_hz", None)
+            ),
+            "final_note_density_count_based": metric_float_or_nan(
+                getattr(self, "final_note_density_count_based", None)
+            ),
+            "final_note_density_salience_weighted": metric_float_or_nan(
+                getattr(self, "final_note_density_salience_weighted", None)
+            ),
+            "harmonic_density_component": metric_float_or_nan(
+                getattr(self, "harmonic_density_component", None)
+            ),
+            "inharmonic_density_component": metric_float_or_nan(
+                getattr(self, "inharmonic_density_component", None)
+            ),
+            "subbass_density_component": metric_float_or_nan(
+                getattr(self, "subbass_density_component", None)
+            ),
+            "harmonic_density_weight": metric_float_or_nan(
+                getattr(self, "harmonic_density_weight", None)
+            ),
+            "inharmonic_density_weight": metric_float_or_nan(
+                getattr(self, "inharmonic_density_weight", None)
+            ),
+            "subbass_density_weight": metric_float_or_nan(
+                getattr(self, "subbass_density_weight", None)
+            ),
+            "density_summation_mode": str(getattr(self, "density_summation_mode", "") or ""),
+            "density_salience_threshold_db": metric_float_or_nan(
+                getattr(self, "density_salience_threshold_db", None)
+            ),
+            "density_frequency_ceiling_hz": metric_float_or_nan(
+                getattr(self, "density_frequency_ceiling_hz", None)
+            ),
+            "spectral_body_thickness_index": metric_float_or_nan(
+                getattr(self, "spectral_body_thickness_index", None)
+            ),
+            "harmonic_occupancy_ratio": metric_float_or_nan(
+                getattr(self, "harmonic_occupancy_ratio", None)
+            ),
+            "harmonic_occupancy_detected_order_count": metric_int_or_nan(
+                getattr(self, "harmonic_occupancy_detected_order_count", None)
+            ),
+            "expected_harmonic_slot_count": metric_int_or_nan(
+                getattr(self, "expected_harmonic_slot_count", None)
+            ),
+            "detected_harmonic_slot_count": metric_int_or_nan(
+                getattr(self, "detected_harmonic_slot_count", None)
+            ),
+            "harmonic_slot_expected_count": metric_int_or_nan(
+                getattr(self, "harmonic_slot_expected_count", getattr(self, "expected_harmonic_slot_count", None))
+            ),
+            "harmonic_slot_matched_count": metric_int_or_nan(
+                getattr(self, "harmonic_slot_matched_count", None)
+            ),
+            "harmonic_slot_coverage_ratio": metric_float_or_nan(
+                (
+                    float(getattr(self, "harmonic_slot_matched_count", np.nan))
+                    / float(
+                        getattr(
+                            self,
+                            "harmonic_slot_expected_count",
+                            getattr(self, "expected_harmonic_slot_count", np.nan),
+                        )
+                    )
+                )
+                if (
+                    getattr(
+                        self,
+                        "harmonic_slot_expected_count",
+                        getattr(self, "expected_harmonic_slot_count", None),
+                    )
+                    is not None
+                    and float(
+                        getattr(
+                            self,
+                            "harmonic_slot_expected_count",
+                            getattr(self, "expected_harmonic_slot_count", 0),
+                        )
+                        or 0
+                    )
+                    > 0
+                )
+                else None
+            ),
+            "harmonic_effective_power_density_normalized": metric_float_or_nan(
+                getattr(
+                    self,
+                    "harmonic_effective_power_density_normalized",
+                    getattr(self, "harmonic_effective_power_density_normalized_by_harmonic_count", None),
+                )
+            ),
+            "residual_log_frequency_occupancy": metric_float_or_nan(
+                getattr(self, "residual_log_frequency_occupancy", None)
+            ),
+            "residual_energy_ratio": metric_float_or_nan(
+                getattr(
+                    self,
+                    "residual_energy_ratio",
+                    getattr(self, "component_residual_noise_energy_ratio", None),
+                )
+            ),
             "harmonic_energy_sum": metric_float_or_nan(getattr(self, "harmonic_energy_sum", None)),
             "inharmonic_energy_sum": metric_float_or_nan(getattr(self, "inharmonic_energy_sum", None)),
             "subbass_energy_sum": metric_float_or_nan(getattr(self, "subbass_energy_sum", None)),
@@ -8515,6 +8847,9 @@ class AudioProcessor:
             "harmonic_energy_ratio": metric_float_or_nan(getattr(self, "harmonic_energy_ratio", None)),
             "inharmonic_energy_ratio": metric_float_or_nan(getattr(self, "inharmonic_energy_ratio", None)),
             "subbass_energy_ratio": metric_float_or_nan(getattr(self, "subbass_energy_ratio", None)),
+            "core_harmonic_energy_ratio": metric_float_or_nan(getattr(self, "harmonic_energy_ratio", None)),
+            "core_residual_energy_ratio": metric_float_or_nan(getattr(self, "residual_energy_ratio", None)),
+            "core_subbass_energy_ratio": metric_float_or_nan(getattr(self, "subbass_energy_ratio", None)),
             "linear_sum_amplitude_harmonic": metric_float_or_nan(
                 getattr(self, "linear_sum_amplitude_harmonic", None)
             ),
@@ -8542,6 +8877,15 @@ class AudioProcessor:
                 self, "effective_partial_density_status", "not_computed"
             ),
             "density_metric_status": getattr(self, "density_metric_status", "not_computed"),
+            "energy_weighted_component_density_diagnostic": metric_float_or_nan(
+                getattr(
+                    self,
+                    "energy_weighted_component_density_diagnostic",
+                    getattr(self, "density_metric_value", None),
+                )
+            ),
+            "arithmetic_validation_status": getattr(self, "arithmetic_validation_status", "passed"),
+            "acoustic_validation_status": getattr(self, "acoustic_validation_status", "passed"),
             "normalization_status": getattr(self, "normalization_status", "not_computed"),
             "model_weight_status": getattr(self, "model_weight_status", "not_computed"),
         }
@@ -8594,6 +8938,21 @@ class AudioProcessor:
             )
         except (TypeError, ValueError):
             main_metrics["f0_final_hz"] = metric_float_or_nan(None)
+        _f0_used_hz, _f0_used_src, _f0_used_status = self._canonical_f0_triplet_for_analysis()
+        main_metrics["f0_used_for_density_hz"] = (
+            float(_f0_used_hz) if np.isfinite(float(_f0_used_hz)) else metric_float_or_nan(None)
+        )
+        main_metrics["f0_used_for_density_source"] = str(_f0_used_src)
+        main_metrics["f0_used_for_harmonic_validation_hz"] = (
+            metric_float_or_nan(getattr(self, "f0_used_for_harmonic_validation_hz", _f0_used_hz))
+        )
+        main_metrics["acoustic_f0_status"] = str(
+            getattr(self, "acoustic_f0_status", _f0_used_status) or _f0_used_status
+        )
+        main_metrics["f0_fit_accepted"] = bool(getattr(self, "f0_fit_accepted", False))
+        main_metrics["f0_fit_rejection_reason"] = str(
+            getattr(self, "f0_fit_rejection_reason", "") or ""
+        )
 
         main_metrics["low_frequency_policy_version"] = str(
             getattr(self, "low_frequency_policy_version", "") or LOW_FREQUENCY_POLICY_VERSION
@@ -9471,6 +9830,17 @@ class AudioProcessor:
                 "tier": getattr(self, "tier", None),
                 "f0_estimated": _f0e,
                 "f0_source": _f0src,
+                "f0_used_for_density_hz": getattr(self, "f0_used_for_density_hz", None),
+                "f0_used_for_density_source": getattr(self, "f0_used_for_density_source", None),
+                "f0_used_for_harmonic_validation_hz": getattr(
+                    self, "f0_used_for_harmonic_validation_hz", None
+                ),
+                "f0_used_for_harmonic_validation_source": getattr(
+                    self, "f0_used_for_harmonic_validation_source", None
+                ),
+                "f0_fit_accepted": getattr(self, "f0_fit_accepted", None),
+                "f0_fit_rejection_reason": getattr(self, "f0_fit_rejection_reason", None),
+                "acoustic_f0_status": getattr(self, "acoustic_f0_status", None),
                 "harmonic_tolerance": float(tol_hz),
                 "snr_threshold_db": float(SNR_THRESHOLD_DB),
                 "rms_normalisation_enabled": True,
@@ -9607,6 +9977,7 @@ class AudioProcessor:
             _pipe_contract = get_canonical_pipeline_contract()
             analysis_meta_rows = [
                 ("analysis_schema_version", ANALYSIS_SCHEMA_VERSION),
+                ("ANALYSIS_SCHEMA_VERSION", ANALYSIS_SCHEMA_VERSION),
                 ("pipeline_contract_version", _pipe_contract.contract_version),
                 ("analysis_engine", "proc_audio.AudioProcessor"),
                 ("analysis_engine_role", CANONICAL_PIPELINE_ROLE),
@@ -9674,14 +10045,78 @@ class AudioProcessor:
                 ("scipy_version", _pkg_ver("scipy")),
                 ("librosa_version", _pkg_ver("librosa")),
                 ("window", _window_str_for_export()),
+                ("window_type", _window_str_for_export()),
                 ("n_fft", int(getattr(self, "n_fft", 4096))),
                 ("n_fft_effective", int(_nff_eff)),
                 ("hop_length", int(hl)),
+                ("zero_padding", int(getattr(self, "zero_padding", 1) or 1)),
+                ("frequency_min_hz", float(getattr(self, "freq_min", float("nan")))),
+                ("frequency_max_hz", float(getattr(self, "freq_max", float("nan")))),
+                ("magnitude_min_db", float(getattr(self, "db_min", float("nan")))),
+                ("magnitude_max_db", float(getattr(self, "db_max", float("nan")))),
                 ("rms_normalisation_enabled", True),
                 ("smoothing_enabled", bool(getattr(self, "spectral_magnitude_smoothing_enabled", False))),
                 ("spectral_masking_enabled", bool(getattr(self, "spectral_masking_enabled", False))),
                 ("snr_threshold_db", float(SNR_THRESHOLD_DB)),
                 ("harmonic_tolerance", tol_hz),
+                (
+                    "density_summation_mode",
+                    str(getattr(self, "density_summation_mode", "his_weighted") or "his_weighted"),
+                ),
+                (
+                    "harmonic_density_weight",
+                    float(
+                        getattr(self, "harmonic_density_weight", 1.0)
+                        if getattr(self, "harmonic_density_weight", 1.0) is not None
+                        else 1.0
+                    ),
+                ),
+                (
+                    "inharmonic_density_weight",
+                    float(
+                        getattr(self, "inharmonic_density_weight", 0.5)
+                        if getattr(self, "inharmonic_density_weight", 0.5) is not None
+                        else 0.5
+                    ),
+                ),
+                (
+                    "subbass_density_weight",
+                    float(
+                        getattr(self, "subbass_density_weight", 0.25)
+                        if getattr(self, "subbass_density_weight", 0.25) is not None
+                        else 0.25
+                    ),
+                ),
+                (
+                    "density_salience_threshold_db",
+                    float(
+                        getattr(self, "density_salience_threshold_db", -45.0)
+                        if getattr(self, "density_salience_threshold_db", -45.0) is not None
+                        else -45.0
+                    ),
+                ),
+                (
+                    "density_frequency_ceiling_hz",
+                    float(
+                        getattr(self, "density_frequency_ceiling_hz", 5000.0)
+                        if getattr(self, "density_frequency_ceiling_hz", 5000.0) is not None
+                        else 5000.0
+                    ),
+                ),
+                (
+                    "legacy_up_to_5000hz_columns_alias_density_ceiling",
+                    bool(
+                        abs(
+                            float(
+                                getattr(self, "density_frequency_ceiling_hz", 5000.0)
+                                if getattr(self, "density_frequency_ceiling_hz", 5000.0) is not None
+                                else 5000.0
+                            )
+                            - 5000.0
+                        )
+                        > 1e-9
+                    ),
+                ),
                 ("per_note_analysis_metadata_scope", "this_note_single_file_export"),
                 (
                     "sheet_Inharmonic_Spectrum_sheet_semantics",
@@ -9962,7 +10397,7 @@ class AudioProcessor:
                     "density_formula",
                     "effective_partial_density = participation-ratio style effective number of "
                     "energetically relevant partials (harmonic + aggregated inharmonic + sub-bass aggregate); "
-                    "density/fatness descriptor, not loudness.",
+                    "effective component participation descriptor (not the primary perceived thickness metric).",
                 ),
                 ("effective_density_component_policy", EFFECTIVE_DENSITY_COMPONENT_POLICY_DOC),
                 ("inharmonic_mode_for_effective_density", INHARMONIC_MODE_FOR_EFFECTIVE_DENSITY),
@@ -10056,6 +10491,20 @@ class AudioProcessor:
                 ("f0_nominal_hz", _meta_atom(getattr(self, "f0_nominal_hz", None))),
                 ("f0_prior_hz", _meta_atom(getattr(self, "f0_prior_hz", None))),
                 ("f0_final_source", _meta_atom(getattr(self, "f0_final_source", None))),
+                ("f0_used_for_density_hz", _meta_atom(getattr(self, "f0_used_for_density_hz", None))),
+                (
+                    "f0_used_for_density_source",
+                    _meta_atom(getattr(self, "f0_used_for_density_source", None)),
+                ),
+                (
+                    "f0_used_for_harmonic_validation_hz",
+                    _meta_atom(getattr(self, "f0_used_for_harmonic_validation_hz", None)),
+                ),
+                (
+                    "f0_used_for_harmonic_validation_source",
+                    _meta_atom(getattr(self, "f0_used_for_harmonic_validation_source", None)),
+                ),
+                ("acoustic_f0_status", _meta_atom(getattr(self, "acoustic_f0_status", None))),
                 (
                     "f0_detuning_cents_from_nominal",
                     _meta_atom(getattr(self, "f0_detuning_cents_from_nominal", None)),
@@ -10073,6 +10522,30 @@ class AudioProcessor:
                 ("f0_fit_accepted", _meta_atom(getattr(self, "f0_fit_accepted", None))),
                 ("f0_fit_quality", _meta_atom(getattr(self, "f0_fit_quality", None))),
                 ("f0_fit_rejection_reason", _meta_atom(getattr(self, "f0_fit_rejection_reason", None))),
+                (
+                    "harmonic_occupancy_ratio",
+                    _meta_atom(getattr(self, "harmonic_occupancy_ratio", None)),
+                ),
+                (
+                    "expected_harmonic_slot_count",
+                    _meta_atom(getattr(self, "expected_harmonic_slot_count", None)),
+                ),
+                (
+                    "detected_harmonic_slot_count",
+                    _meta_atom(getattr(self, "detected_harmonic_slot_count", None)),
+                ),
+                (
+                    "residual_log_frequency_occupancy",
+                    _meta_atom(getattr(self, "residual_log_frequency_occupancy", None)),
+                ),
+                (
+                    "residual_log_frequency_bin_count",
+                    _meta_atom(getattr(self, "residual_log_frequency_bin_count", None)),
+                ),
+                (
+                    "residual_log_frequency_bin_total",
+                    _meta_atom(getattr(self, "residual_log_frequency_bin_total", None)),
+                ),
             ]
             # No legacy batch_* aliases are emitted into Analysis_Metadata in
             # current-analysis mode. The canonical component_* keys above are

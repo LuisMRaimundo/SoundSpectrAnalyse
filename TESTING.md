@@ -134,6 +134,14 @@ pytest tests/test_research_density_export.py tests/test_post_compile_research_ex
 
 The suite includes a **zip** check that the output has **no** `xl/tables/*.xml` parts (Excel repair regression guard), tests for **`density_weighted_sum_cdm_mean`** and column highlights, and **`tests/test_legacy_density_export.py`** for **`Legacy_Density_Metrics`** merge / `_build_legacy_density_metrics_row`.
 
+`density_weighted_sum_cdm_mean` is now legacy opt-in (`--include-legacy-cdm-mean`), and tests cover both default omission and explicit inclusion.
+
+After changes to acoustic density descriptors or f0 provenance, also run:
+
+```bash
+pytest tests/test_acoustic_density_constructs.py tests/test_f0_canonical_density_regression.py -v
+```
+
 After changes to **`proc_audio`** legacy export or **`compile_metrics.read_excel_metrics`**:
 
 ```bash

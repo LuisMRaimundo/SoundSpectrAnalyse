@@ -1,6 +1,18 @@
 # SoundSpectrAnalyse
 
-Spectral analysis for acoustic research. **Canonical publication pipeline:** **`proc_audio.AudioProcessor`** (Stage 1) writes per-note **`spectral_analysis.xlsx`** plus standard PNGs (**`spectrogram.png`**, two **semantically distinct** component pies — linear **amplitude-mass** vs **energy-ratio** — and a legacy-alias **`component_energy_pie.png`**; see **`docs/CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md`**); **`compile_metrics.compile_density_metrics_with_pca`** (Stage 2) builds **`compiled_density_metrics.xlsx`** with multi-sheet exports (`Density_Metrics`, `Canonical_Metrics`, `Diagnostic_Metrics`, `Debug_Counts`, …). The primary public spectral-fatness scalar on **`Density_Metrics`** is **`effective_partial_density`**.
+Spectral analysis for acoustic research. **Canonical publication pipeline:** **`proc_audio.AudioProcessor`** (Stage 1) writes per-note **`spectral_analysis.xlsx`** plus standard PNGs (**`spectrogram.png`**, two **semantically distinct** component pies — linear **amplitude-mass** vs **energy-ratio** — and a legacy-alias **`component_energy_pie.png`**; see **`docs/CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md`**); **`compile_metrics.compile_density_metrics_with_pca`** (Stage 2) builds **`compiled_density_metrics.xlsx`** with multi-sheet exports (`Density_Metrics`, `Canonical_Metrics`, `Diagnostic_Metrics`, `Debug_Counts`, …). For note body/thickness analysis, use **`spectral_body_thickness_index`**; **`effective_partial_density`** remains an effective-component participation descriptor.
+
+Current accepted final-density architecture:
+- primary final metric: `final_note_density_salience_weighted`
+- control metric: `final_note_density_count_based`
+- canonical mode defaults: `his_weighted`, `wH=1.0`, `wI=0.5`, `wS=0.25`, threshold `-45 dB`, ceiling `5000 Hz`
+
+Canonical processing chain:
+`GUI/Orchestrator config -> Stage 1 per-note spectral analysis -> Stage 2 compile -> Stage 3 research export -> Dashboard/Charts/Metadata`.
+
+Legacy warning:
+- `density_metric_raw`, `density_weighted_sum`, `Combined Density Metric`, and related legacy fields are not the final note-density definition.
+- fallback f0 (`nominal_fallback_used_not_acoustically_verified`) is not acoustic verification.
 
 Optional **batch preprocessing** (`batch_audio_analyzer` / `super_audio_analyzer`) may supply **`batch_summary.xlsx`** for empirical **H+I+S** profiles and **H/(H+I)** model coefficients; it is **not** required for the canonical chain above. Legacy Tk / PyQt entry points remain ancillary.
 
@@ -36,6 +48,11 @@ pip install --upgrade --force-reinstall -r requirements-pins.txt
 | Document | Purpose |
 |----------|---------|
 | **[docs/CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md](docs/CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md)** | **Normative** pipeline, f0, harmonics, nonharmonics, subfundamental, Debug_Counts, missing metrics, audit CLI. |
+| **[docs/TECHNICAL_MANUAL.md](docs/TECHNICAL_MANUAL.md)** | Complete technical manual for the current final-density architecture (formulas, pipeline, GUI options, workbook schema, interpretation, limitations). |
+| **[docs/QUICK_GUIDE.md](docs/QUICK_GUIDE.md)** | User quick-start: what to run, recommended defaults, which metrics to use, common pitfalls. |
+| **[docs/TUTORIAL.md](docs/TUTORIAL.md)** | Step-by-step tutorials for default, harmonic-only, weighted H/I/S, clarinet/cello comparisons, and validity checks. |
+| **[docs/FINAL_ACCEPTANCE_REPORT.md](docs/FINAL_ACCEPTANCE_REPORT.md)** | Final acceptance evidence (population, formula checks, regression gate, release decision). |
+| **[docs/GUI_OPTION_EFFECT_AUDIT.md](docs/GUI_OPTION_EFFECT_AUDIT.md)** | GUI wiring/effect audit for mode, weights, threshold, ceiling, metadata and propagation checks. |
 | **[docs/CURRENT_DOCUMENTATION_INDEX.md](docs/CURRENT_DOCUMENTATION_INDEX.md)** | What is safe to cite vs legacy vs archived. |
 | **[docs/DOCUMENTATION_AUDIT_REPORT.md](docs/DOCUMENTATION_AUDIT_REPORT.md)** | 2026-05-13 documentation audit register. |
 | **[docs/MATHEMATICAL_FORMALISATION_VERIFICATION_REPORT_FIRST_PASS.md](docs/MATHEMATICAL_FORMALISATION_VERIFICATION_REPORT_FIRST_PASS.md)** | LaTeX formalisation of six core `density.py` metrics (read-only vs code). |
@@ -48,7 +65,7 @@ pip install --upgrade --force-reinstall -r requirements-pins.txt
 | **`docs/DENSITY_EXPORT_SCHEMA.md`** | **Authoritative** export schema: `Density_Metrics`, `Per_Note_Processing_Metadata`, dissonance/PCA separation, redaction notes. |
 | **`docs/BATCH_ANALYSIS_AUDIT.md`** | Batch row semantics, H+I+S validation, model weights **H/(H+I)** (optional Phase 1). |
 | **`docs/BATCH_ANALYSIS_FIELD_MAP.md`** | Short field map for `batch_summary.xlsx` and orchestrator handoff. |
-| [TECHNICAL_MANUAL.md](TECHNICAL_MANUAL.md) | Long-form architecture (includes **historical** sections; canonical export semantics in **`docs/`**). |
+| [TECHNICAL_MANUAL.md](TECHNICAL_MANUAL.md) | Legacy root manual retained for historical compatibility; use **`docs/TECHNICAL_MANUAL.md`** as current technical reference. |
 | [TESTING.md](TESTING.md) | Pytest policy, slow-marker contract, pipeline invariants, **formula-validation** command. |
 | [QUICK_START_ORCHESTRATOR.md](QUICK_START_ORCHESTRATOR.md) | CLI examples for **`run_orchestrator.py`**. |
 | [ORCHESTRATOR_INTEGRATION_GUIDE.md](ORCHESTRATOR_INTEGRATION_GUIDE.md) | Optional preprocessing → main analysis integration. |
@@ -105,7 +122,9 @@ The research workbook is written for **Microsoft Excel compatibility**: it does 
 
 The full **`compiled_density_metrics.xlsx`** remains the complete technical and audit export; **`compiled_density_metrics_research.xlsx`** is the recommended workbook for analysis, plotting, and thesis-ready tables.
 
-On **`Spectral_Density_Metrics`**, the research export adds **`density_weighted_sum_cdm_mean`** = \((\texttt{density\_weighted\_sum} + \texttt{Combined Density Metric}) / 2\) and applies soft column highlights (blue / yellow / lavender) to **`density_weighted_sum`**, **`Combined Density Metric`**, and that mean — for side-by-side reading only; normative definitions are in **`docs/DENSITY_EXPORT_SCHEMA.md`** §R.
+On **`Spectral_Density_Metrics`**, the research export keeps **`density_metric_raw`** as an explicitly diagnostic, energy-weighted component sum (`D_H*w_H + D_I*w_I + D_S*w_S`) and does **not** export **`density_weighted_sum_cdm_mean`** by default.  
+**`Combined Density Metric`** is legacy-only and exported on **`Legacy_Compatibility`**, not as a primary `Spectral_Density_Metrics` metric.
+If you need the deprecated editorial blend **`density_weighted_sum_cdm_mean`**, pass **`--include-legacy-cdm-mean`** explicitly; it is not dimensionally/acoustically valid as a final scalar.
 
 **Per-note legacy sheet (Stage 1):** each **`spectral_analysis.xlsx`** also writes **`Legacy_Density_Metrics`** (SDM, FDM, CDM, `Density Metric`) so compile can populate **`Weighted Combined Metric`** on diagnostic sheets. v6 does **not** restore the v5 spectral-masking checkbox; masking stays off in the physical workflow.
 

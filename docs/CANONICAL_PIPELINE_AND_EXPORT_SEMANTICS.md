@@ -192,7 +192,8 @@ After Stage 2 produces **`compiled_density_metrics.xlsx`**, the optional **resea
 
 - Does **not** modify Stage 1/2 numeric pipelines or rewrite the compiled workbook.  
 - Merges **`Legacy_Compatibility`** (among other sheets) so **`Combined Density Metric`** and other legacy columns from per-note **`Legacy_Density_Metrics`** are available when present.  
-- Adds **`density_weighted_sum_cdm_mean`** = \((\texttt{density\_weighted\_sum} + \texttt{Combined Density Metric}) / 2\) on **`Spectral_Density_Metrics`** — an **editorial** blend, not a third canonical density (see **`docs/DENSITY_EXPORT_SCHEMA.md`** §R).  
+- Keeps `density_metric_raw` as a diagnostic energy-weighted component sum and does **not** export `density_weighted_sum_cdm_mean` by default.  
+- `density_weighted_sum_cdm_mean` is available only with `--include-legacy-cdm-mean` and remains a deprecated editorial blend, not a canonical density (see **`docs/DENSITY_EXPORT_SCHEMA.md`** §R).  
 - May **infer or override** `Instrument` / `Dynamic` metadata (CLI: `--instrument`, `--dynamic`, `--force-metadata`); see the research workbook **README** sheet.  
 - May **resolve** per-note component chart paths under the compiled workbook’s parent folder when filenames are missing from the source sheet.
 

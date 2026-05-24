@@ -33,6 +33,8 @@ import gc
 import re
 import sys
 import math
+import os
+import webbrowser
 import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -170,6 +172,7 @@ from weight_function_ui_labels import (
 try:
     import librosa
     import soundfile as sf
+    import pandas as pd
     import matplotlib.pyplot as plt
     # Import from main directory explicitly
     import proc_audio
@@ -450,6 +453,16 @@ def _attach_tk_tooltip(widget: tk.Widget, text: str) -> None:
 log = logging.getLogger("RobustOrchestrator")
 log.setLevel(logging.INFO)
 
+DENSITY_MODE_LABEL_TO_INTERNAL: Dict[str, str] = {
+    "Harmonic only": "harmonic_only",
+    "Inharmonic only": "inharmonic_only",
+    "Subbass only": "subbass_only",
+    "Harmonic + inharmonic + subbass": "his_weighted",
+}
+DENSITY_MODE_INTERNAL_TO_LABEL: Dict[str, str] = {
+    v: k for k, v in DENSITY_MODE_LABEL_TO_INTERNAL.items()
+}
+
 class QueueLogHandler(logging.Handler):
     def __init__(self, log_queue: queue.Queue):
         super().__init__()
@@ -473,216 +486,320 @@ class RobustOrchestratorApp:
         self.master.after(100, self._process_log_queue)
 
     def _build_ui(self):
-        # Frame 1: Inputs
-        frame_input = ttk.LabelFrame(self.master, text="1. Input Folders")
+        frame_input = ttk.LabelFrame(self.master, text="Input folders")
         frame_input.pack(fill=tk.X, padx=10, pady=5)
-        ttk.Button(frame_input, text="Add Folder(s)", command=self._add_folders).pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(frame_input, text="Clear Queue", command=self._clear_queue).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(frame_input, text="Add Folder(s)", command=self._add_folders).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
+        ttk.Button(frame_input, text="Clear Queue", command=self._clear_queue).pack(
+            side=tk.LEFT, padx=5, pady=5
+        )
         self.lbl_count = ttk.Label(frame_input, text="Queue: 0 folders")
         self.lbl_count.pack(side=tk.LEFT, padx=15)
 
-        # Frame 2: Settings (Expanded for full parity)
-        frame_options = ttk.LabelFrame(self.master, text="2. Acoustic Physics & Metrics (Full Interface Parity)")
-        frame_options.pack(fill=tk.X, padx=10, pady=5)
-
-        # Create notebook for better organization
+        frame_options = ttk.LabelFrame(self.master, text="Pipeline controls")
+        frame_options.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         notebook = ttk.Notebook(frame_options)
         notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-        # Tab 1: Basic Parameters
         tab_basic = ttk.Frame(notebook)
+        tab_advanced = ttk.Frame(notebook)
         notebook.add(tab_basic, text="Basic")
-        
-        col1 = ttk.Frame(tab_basic)
-        col1.grid(row=0, column=0, padx=10, pady=5, sticky="n")
-        ttk.Label(col1, text="Window Type:").pack(anchor="w")
-        # FULL PARITY: All window types from interface.py
-        self.combo_window = ttk.Combobox(col1, values=VALID_WINDOW_TYPES, state="readonly")
+        notebook.add(tab_advanced, text="Advanced")
+
+        # ---------------------- BASIC TAB ----------------------
+        lf_density = ttk.LabelFrame(tab_basic, text="Final Density")
+        lf_density.pack(fill=tk.X, padx=10, pady=8)
+
+        ttk.Label(lf_density, text="Density mode").pack(anchor="w")
+        self.combo_density_mode = ttk.Combobox(
+            lf_density,
+            state="readonly",
+            values=list(DENSITY_MODE_LABEL_TO_INTERNAL.keys()),
+        )
+        self.combo_density_mode.set(DENSITY_MODE_INTERNAL_TO_LABEL["his_weighted"])
+        self.combo_density_mode.pack(fill=tk.X)
+        _attach_tk_tooltip(
+            self.combo_density_mode,
+            "Controls which spectral components enter the final note-density metric.",
+        )
+
+        ttk.Label(lf_density, text="Harmonic weight").pack(anchor="w", pady=(6, 0))
+        self.entry_density_w_h = ttk.Entry(lf_density, width=10)
+        self.entry_density_w_h.insert(0, "1.0")
+        self.entry_density_w_h.pack(fill=tk.X)
+        _attach_tk_tooltip(
+            self.entry_density_w_h,
+            "Weight applied to salient harmonic orders.",
+        )
+
+        ttk.Label(lf_density, text="Inharmonic/noise weight").pack(anchor="w", pady=(6, 0))
+        self.entry_density_w_i = ttk.Entry(lf_density, width=10)
+        self.entry_density_w_i.insert(0, "0.5")
+        self.entry_density_w_i.pack(fill=tk.X)
+        _attach_tk_tooltip(
+            self.entry_density_w_i,
+            "Weight applied to occupied inharmonic log-frequency bins.",
+        )
+
+        ttk.Label(lf_density, text="Subbass/particle weight").pack(anchor="w", pady=(6, 0))
+        self.entry_density_w_s = ttk.Entry(lf_density, width=10)
+        self.entry_density_w_s.insert(0, "0.25")
+        self.entry_density_w_s.pack(fill=tk.X)
+        _attach_tk_tooltip(
+            self.entry_density_w_s,
+            "Weight applied to salient subbass/breath/bow-scrape particles.",
+        )
+
+        ttk.Label(lf_density, text="Salience threshold (dB)").pack(anchor="w", pady=(6, 0))
+        self.entry_density_salience_threshold_db = ttk.Entry(lf_density, width=10)
+        self.entry_density_salience_threshold_db.insert(0, "-45.0")
+        self.entry_density_salience_threshold_db.pack(fill=tk.X)
+        _attach_tk_tooltip(
+            self.entry_density_salience_threshold_db,
+            "Components below this relative level do not contribute to final density. Default: -45 dB.",
+        )
+
+        ttk.Label(lf_density, text="Density ceiling (Hz)").pack(anchor="w", pady=(6, 0))
+        self.entry_density_frequency_ceiling_hz = ttk.Entry(lf_density, width=10)
+        self.entry_density_frequency_ceiling_hz.insert(0, "5000.0")
+        self.entry_density_frequency_ceiling_hz.pack(fill=tk.X)
+        _attach_tk_tooltip(
+            self.entry_density_frequency_ceiling_hz,
+            "Upper frequency limit for final density counting. Default: 5000 Hz.",
+        )
+
+        lf_output = ttk.LabelFrame(tab_basic, text="Recommended output")
+        lf_output.pack(fill=tk.X, padx=10, pady=(0, 8))
+        ttk.Label(
+            lf_output,
+            text=(
+                "Primary output:\n"
+                "final_note_density_salience_weighted\n\n"
+                "Control output:\n"
+                "final_note_density_count_based"
+            ),
+            justify="left",
+        ).pack(anchor="w", padx=6, pady=6)
+
+        lf_help = ttk.LabelFrame(tab_basic, text="Help")
+        lf_help.pack(fill=tk.X, padx=10, pady=(0, 8))
+        ttk.Button(
+            lf_help,
+            text="Quick Guide",
+            command=lambda: self._open_doc("docs/QUICK_GUIDE.md"),
+        ).pack(side=tk.LEFT, padx=6, pady=6)
+        ttk.Button(
+            lf_help,
+            text="Technical Manual",
+            command=lambda: self._open_doc("docs/TECHNICAL_MANUAL.md"),
+        ).pack(side=tk.LEFT, padx=6, pady=6)
+        ttk.Button(
+            lf_help,
+            text="Tutorial",
+            command=lambda: self._open_doc("docs/TUTORIAL.md"),
+        ).pack(side=tk.LEFT, padx=6, pady=6)
+
+        frame_act = ttk.LabelFrame(tab_basic, text="Run")
+        frame_act.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 8))
+        self.btn_run = ttk.Button(frame_act, text="RUN PIPELINE", command=self._run)
+        self.btn_run.pack(fill=tk.X, padx=6, pady=(6, 2))
+        self.btn_stop = ttk.Button(frame_act, text="STOP", state=tk.DISABLED, command=self._stop)
+        self.btn_stop.pack(fill=tk.X, padx=6, pady=2)
+        self.lbl_status = ttk.Label(frame_act, text="Idle", font=("Arial", 10, "bold"))
+        self.lbl_status.pack(padx=6, pady=4)
+        self.txt_log = tk.Text(frame_act, height=12, state=tk.DISABLED, bg="#f0f0f0")
+        self.txt_log.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
+
+        # ---------------------- ADVANCED TAB ----------------------
+        lf_stft = ttk.LabelFrame(tab_advanced, text="STFT settings")
+        lf_stft.pack(fill=tk.X, padx=10, pady=8)
+
+        ttk.Label(lf_stft, text="Window type").grid(row=0, column=0, sticky="w")
+        self.combo_window = ttk.Combobox(lf_stft, values=VALID_WINDOW_TYPES, state="readonly")
         self.combo_window.set("blackmanharris")
-        self.combo_window.pack(fill=tk.X)
+        self.combo_window.grid(row=1, column=0, sticky="ew", padx=(0, 8))
         self.combo_window.bind("<<ComboboxSelected>>", self._on_window_changed)
-        
-        # Window-specific parameters (shown conditionally)
-        self.frame_window_params = ttk.LabelFrame(col1, text="Window Parameters")
-        self.frame_window_params.pack(fill=tk.X, pady=(5,0))
-        
-        self.lbl_kaiser = ttk.Label(self.frame_window_params, text="Kaiser Beta:")
+        _attach_tk_tooltip(self.combo_window, "STFT window used for spectral analysis.")
+
+        self.frame_window_params = ttk.LabelFrame(lf_stft, text="Window parameters")
+        self.frame_window_params.grid(row=1, column=1, sticky="ew")
+        self.lbl_kaiser = ttk.Label(self.frame_window_params, text="Kaiser beta:")
         self.entry_kaiser_beta = ttk.Entry(self.frame_window_params, width=10)
         self.entry_kaiser_beta.insert(0, "6.5")
-        
-        self.lbl_gaussian = ttk.Label(self.frame_window_params, text="Gaussian Std:")
+        self.lbl_gaussian = ttk.Label(self.frame_window_params, text="Gaussian std:")
         self.entry_gaussian_std = ttk.Entry(self.frame_window_params, width=10)
         self.entry_gaussian_std.insert(0, "auto")
-        
         self._update_window_params_visibility()
-        
-        ttk.Label(col1, text="Magnitude Range (dB):").pack(anchor="w", pady=(10,0))
-        self.entry_min_db = ttk.Entry(col1, width=10)
-        self.entry_min_db.insert(0, "-90.0")
-        self.entry_min_db.pack(fill=tk.X)
-        self.entry_max_db = ttk.Entry(col1, width=10)
-        self.entry_max_db.insert(0, "0.0")
-        self.entry_max_db.pack(fill=tk.X)
 
-        # Col 2
-        col2 = ttk.Frame(tab_basic)
-        col2.grid(row=0, column=1, padx=10, pady=5, sticky="n")
-        ttk.Label(col2, text="Dissonance Model:").pack(anchor="w")
-        self.combo_dissonance = ttk.Combobox(col2, state="readonly", 
-                                             values=["sethares", "hutchinson", "vassilakis", "ALL (Compare)"])
-        self.combo_dissonance.set("sethares")
-        self.combo_dissonance.pack(fill=tk.X)
-
-        self.label_amplitude_weighting_function = ttk.Label(col2, text="Amplitude weighting function:")
-        self.label_amplitude_weighting_function.pack(anchor="w", pady=(10, 0))
-        # FULL PARITY: same human-readable labels as interface.py (→ density keys)
-        self.combo_weight = ttk.Combobox(col2, values=list(WEIGHT_FUNCTION_COMBO_LABELS), state="readonly")
-        self.combo_weight.set(WEIGHT_FUNCTION_COMBO_LABELS[0])
-        self.combo_weight.pack(fill=tk.X)
-        _wf_tip = (
-            "Transforms amplitude values before summation (linear, sqrt, log, …), "
-            "or discrete spectral metrics d3=Σlog(1+A), "
-            "d10=(Σlog(1+A))·(N_eff/N), d17=log(1+ΣA²)·log(1+N_eff), "
-            "d24=filtered log (≥1 % of A_max, f≤12 kHz when frequencies are available). "
-            "d3/d10/d17/d24 bypass rolloff / max-normalization used for the canonical fatness path."
-        )
-        _attach_tk_tooltip(self.label_amplitude_weighting_function, _wf_tip)
-        _attach_tk_tooltip(self.combo_weight, _wf_tip)
-
-        ttk.Label(
-            col2,
-            text=(
-                "Component energy ratios are derived from the current "
-                "spectral analysis.\n"
-                "No external H/I/S percentages are used.\n"
-                "Pipeline: Stage 1 — Per-note spectral analysis; "
-                "Stage 2 — Compilation."
-            ),
-            wraplength=240,
-            justify="left",
-        ).pack(anchor="w", pady=(8, 0))
-
-        # Col 3
-        col3 = ttk.Frame(tab_basic)
-        col3.grid(row=0, column=2, padx=10, pady=5, sticky="n")
-        # LFT removed: zero_padding and time_avg are now standard STFT parameters
-        
-        ttk.Label(col3, text="Time Avg:").pack(anchor="w", pady=(5,0))
-        self.combo_avg = ttk.Combobox(col3, values=["mean", "median", "max"], state="readonly")
-        self.combo_avg.set("mean")
-        self.combo_avg.pack(fill=tk.X)
-        
-        ttk.Separator(col3).pack(fill=tk.X, pady=10)
         self.var_smart = tk.BooleanVar(value=True)
-        ttk.Checkbutton(col3, text="90-Tier Granular Clustering", variable=self.var_smart,
-                       command=self._on_smart_changed).pack(anchor="w")
-        
-        # Fixed FFT Parameters (only enabled when smart=False)
-        frame_fixed_fft = ttk.LabelFrame(col3, text="Fixed FFT Parameters")
-        frame_fixed_fft.pack(fill=tk.X, pady=(5,0))
-        
-        ttk.Label(frame_fixed_fft, text="N_FFT:").pack(anchor="w")
-        self.entry_n_fft = ttk.Entry(frame_fixed_fft, width=10)
+        ttk.Checkbutton(
+            lf_stft,
+            text="90-tier granular clustering (tier strategy)",
+            variable=self.var_smart,
+            command=self._on_smart_changed,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 2))
+
+        self.lbl_fixed_fft_override = ttk.Label(
+            lf_stft,
+            text="Fixed FFT controls are overridden by tier strategy when enabled.",
+            foreground="#666666",
+        )
+        self.lbl_fixed_fft_override.grid(row=3, column=0, columnspan=2, sticky="w")
+
+        ttk.Label(lf_stft, text="N_FFT (fixed mode)").grid(row=4, column=0, sticky="w", pady=(8, 0))
+        self.entry_n_fft = ttk.Entry(lf_stft, width=10)
         self.entry_n_fft.insert(0, "4096")
-        self.entry_n_fft.pack(fill=tk.X)
-        
-        ttk.Label(frame_fixed_fft, text="Hop Length:").pack(anchor="w", pady=(5,0))
-        self.entry_hop_length = ttk.Entry(frame_fixed_fft, width=10)
+        self.entry_n_fft.grid(row=5, column=0, sticky="ew", padx=(0, 8))
+
+        ttk.Label(lf_stft, text="Hop length (fixed mode)").grid(row=4, column=1, sticky="w", pady=(8, 0))
+        self.entry_hop_length = ttk.Entry(lf_stft, width=10)
         self.entry_hop_length.insert(0, "1024")
-        self.entry_hop_length.pack(fill=tk.X)
-        
-        ttk.Label(frame_fixed_fft, text="Zero Padding:").pack(anchor="w", pady=(5,0))
-        self.entry_zero_padding = ttk.Entry(frame_fixed_fft, width=10)
+        self.entry_hop_length.grid(row=5, column=1, sticky="ew")
+
+        ttk.Label(lf_stft, text="Zero padding (fixed mode)").grid(row=6, column=0, sticky="w", pady=(8, 0))
+        self.entry_zero_padding = ttk.Entry(lf_stft, width=10)
         self.entry_zero_padding.insert(0, "2")
-        self.entry_zero_padding.pack(fill=tk.X)
-        
-        # Initially disable fixed FFT parameters (smart mode is default)
-        self._update_fixed_fft_visibility()
-        
-        ttk.Separator(col3).pack(fill=tk.X, pady=10)
+        self.entry_zero_padding.grid(row=7, column=0, sticky="ew", padx=(0, 8))
+
+        ttk.Label(lf_stft, text="Time averaging").grid(row=6, column=1, sticky="w", pady=(8, 0))
+        self.combo_avg = ttk.Combobox(lf_stft, values=["mean", "median", "max"], state="readonly")
+        self.combo_avg.set("mean")
+        self.combo_avg.grid(row=7, column=1, sticky="ew")
+
+        ttk.Label(lf_stft, text="Peak detection magnitude range (dB)").grid(
+            row=8, column=0, sticky="w", pady=(8, 0)
+        )
+        self.entry_min_db = ttk.Entry(lf_stft, width=10)
+        self.entry_min_db.insert(0, "-90.0")
+        self.entry_min_db.grid(row=9, column=0, sticky="ew", padx=(0, 8))
+        self.entry_max_db = ttk.Entry(lf_stft, width=10)
+        self.entry_max_db.insert(0, "0.0")
+        self.entry_max_db.grid(row=9, column=1, sticky="ew")
+        _attach_tk_tooltip(
+            self.entry_min_db,
+            "Used by peak detection and spectral component filtering in analysis.",
+        )
+        _attach_tk_tooltip(
+            self.entry_max_db,
+            "Used by peak detection and spectral component filtering in analysis.",
+        )
+
+        lf_harmonic = ttk.LabelFrame(tab_advanced, text="Harmonic classification")
+        lf_harmonic.pack(fill=tk.X, padx=10, pady=(0, 8))
+        ttk.Label(lf_harmonic, text="Frequency range (Hz)").grid(row=0, column=0, sticky="w")
+        self.entry_min_freq = ttk.Entry(lf_harmonic, width=12)
+        self.entry_min_freq.insert(0, "20.0")
+        self.entry_min_freq.grid(row=1, column=0, sticky="ew", padx=(0, 8))
+        self.entry_max_freq = ttk.Entry(lf_harmonic, width=12)
+        self.entry_max_freq.insert(0, "20000.0")
+        self.entry_max_freq.grid(row=1, column=1, sticky="ew")
+        ttk.Label(lf_harmonic, text="Harmonic tolerance (Hz)").grid(row=2, column=0, sticky="w", pady=(8, 0))
+        self.entry_tolerance = ttk.Entry(lf_harmonic, width=12)
+        self.entry_tolerance.insert(0, "5.0")
+        self.entry_tolerance.grid(row=3, column=0, sticky="ew", padx=(0, 8))
+        self.var_adaptive_tolerance = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            lf_harmonic,
+            text="Use adaptive tolerance",
+            variable=self.var_adaptive_tolerance,
+        ).grid(row=3, column=1, sticky="w")
+        ttk.Label(
+            lf_harmonic,
+            text="f0 strategy: acoustic fit when validated; otherwise nominal fallback (reported in outputs).",
+            foreground="#444444",
+            wraplength=520,
+            justify="left",
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        lf_secondary = ttk.LabelFrame(tab_advanced, text="Secondary descriptors")
+        lf_secondary.pack(fill=tk.X, padx=10, pady=(0, 8))
+        ttk.Label(lf_secondary, text="Dissonance model").grid(row=0, column=0, sticky="w")
+        self.combo_dissonance = ttk.Combobox(
+            lf_secondary,
+            state="readonly",
+            values=["sethares", "hutchinson", "vassilakis", "ALL (Compare)"],
+        )
+        self.combo_dissonance.set("sethares")
+        self.combo_dissonance.grid(row=1, column=0, sticky="ew", padx=(0, 8))
+        _attach_tk_tooltip(
+            self.combo_dissonance,
+            "Secondary descriptor only. Does not define final note density.",
+        )
+
+        self.label_amplitude_weighting_function = ttk.Label(
+            lf_secondary, text="Amplitude weighting (diagnostic paths)"
+        )
+        self.label_amplitude_weighting_function.grid(row=0, column=1, sticky="w")
+        self.combo_weight = ttk.Combobox(
+            lf_secondary, values=list(WEIGHT_FUNCTION_COMBO_LABELS), state="readonly"
+        )
+        self.combo_weight.set(WEIGHT_FUNCTION_COMBO_LABELS[0])
+        self.combo_weight.grid(row=1, column=1, sticky="ew")
+        _attach_tk_tooltip(
+            self.combo_weight,
+            "Affects diagnostic/secondary density paths. Final note density uses the H/I/S mode+weights controls.",
+        )
+        ttk.Label(
+            lf_secondary,
+            text=(
+                "Secondary metrics:\n"
+                "- spectral_body_thickness_index\n"
+                "- spectral_entropy\n"
+                "- effective_partial_density\n"
+                "- dissonance descriptors"
+            ),
+            justify="left",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        lf_debug = ttk.LabelFrame(tab_advanced, text="Debug / legacy")
+        lf_debug.pack(fill=tk.X, padx=10, pady=(0, 8))
+        ttk.Label(
+            lf_debug,
+            text=(
+                "Diagnostic/legacy outputs (not final density):\n"
+                "- density_metric_raw\n"
+                "- Combined Density Metric\n"
+                "- legacy/diagnostic exports"
+            ),
+            justify="left",
+        ).pack(anchor="w", pady=(0, 6))
+
         self.var_compile = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            col3,
+            lf_debug,
             text="Auto-compile compiled_density_metrics.xlsx (Stage 2)",
             variable=self.var_compile,
         ).pack(anchor="w")
 
-        # Tab 2: Advanced Parameters (Full parity)
-        tab_advanced = ttk.Frame(notebook)
-        notebook.add(tab_advanced, text="Advanced")
-        
-        adv_col1 = ttk.Frame(tab_advanced)
-        adv_col1.grid(row=0, column=0, padx=10, pady=5, sticky="n")
-        
-        ttk.Label(adv_col1, text="Frequency Range (Hz):").pack(anchor="w")
-        self.entry_min_freq = ttk.Entry(adv_col1, width=12)
-        self.entry_min_freq.insert(0, "20.0")
-        self.entry_min_freq.pack(fill=tk.X)
-        self.entry_max_freq = ttk.Entry(adv_col1, width=12)
-        self.entry_max_freq.insert(0, "20000.0")
-        self.entry_max_freq.pack(fill=tk.X)
-        
-        ttk.Label(adv_col1, text="Tolerance (Hz):").pack(anchor="w", pady=(10,0))
-        self.entry_tolerance = ttk.Entry(adv_col1, width=12)
-        self.entry_tolerance.insert(0, "5.0")
-        self.entry_tolerance.pack(fill=tk.X)
-        
-        self.var_adaptive_tolerance = tk.BooleanVar(value=True)
-        ttk.Checkbutton(adv_col1, text="Use Adaptive Tolerance", 
-                       variable=self.var_adaptive_tolerance).pack(anchor="w", pady=(5,0))
-
-        # Advanced Analysis Options (t-SNE, UMAP, Anomaly Detection)
-        adv_col2 = ttk.Frame(tab_advanced)
-        adv_col2.grid(row=0, column=1, padx=10, pady=5, sticky="n")
-        
-        ttk.Label(adv_col2, text="Advanced Analysis:", font=("Arial", 9, "bold")).pack(anchor="w")
-        
         self.var_use_tsne = tk.BooleanVar(value=False)
-        ttk.Checkbutton(adv_col2, text="Use t-SNE", variable=self.var_use_tsne).pack(anchor="w", pady=(5,0))
-        
         self.var_use_umap = tk.BooleanVar(value=False)
-        ttk.Checkbutton(adv_col2, text="Use UMAP", variable=self.var_use_umap).pack(anchor="w", pady=(5,0))
-        
         self.var_detect_anomalies = tk.BooleanVar(value=False)
-        ttk.Checkbutton(adv_col2, text="Detect Anomalies", variable=self.var_detect_anomalies).pack(anchor="w", pady=(5,0))
-
-        ttk.Label(
-            adv_col2,
-            text=(
-                "These run in Stage 2 (compile). When any is on, compilation is run in a "
-                "separate Python process so UMAP/numba/sklearn cannot crash the Tk GUI."
-            ),
-            wraplength=280,
-            justify=tk.LEFT,
-            font=("Arial", 8),
-        ).pack(anchor="w", pady=(6, 0))
-        
-        ttk.Label(adv_col2, text="Anomaly Contamination (auto or 0-1):").pack(anchor="w", pady=(10,0))
-        self.entry_contamination = ttk.Entry(adv_col2, width=12)
+        ttk.Checkbutton(lf_debug, text="Use t-SNE (advanced)", variable=self.var_use_tsne).pack(anchor="w")
+        ttk.Checkbutton(lf_debug, text="Use UMAP (advanced)", variable=self.var_use_umap).pack(anchor="w")
+        ttk.Checkbutton(
+            lf_debug,
+            text="Detect anomalies (advanced)",
+            variable=self.var_detect_anomalies,
+        ).pack(anchor="w")
+        ttk.Label(lf_debug, text="Anomaly contamination (auto or 0-1):").pack(anchor="w", pady=(6, 0))
+        self.entry_contamination = ttk.Entry(lf_debug, width=12)
         self.entry_contamination.insert(0, "auto")
-        self.entry_contamination.pack(fill=tk.X)
+        self.entry_contamination.pack(anchor="w")
 
-        lf_mw = ttk.LabelFrame(
-            adv_col2, text="Manual model-weight override (advanced)"
-        )
-        lf_mw.pack(fill=tk.X, pady=(12, 0))
+        lf_mw = ttk.LabelFrame(lf_debug, text="Manual model-weight override (advanced)")
+        lf_mw.pack(fill=tk.X, pady=(8, 0))
         self.var_manual_model_weight_override = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             lf_mw,
-            text=(
-                "Enable manual inharmonic coefficient β "
-                "(overrides current-analysis ratios)"
-            ),
+            text="Enable manual inharmonic coefficient β",
             variable=self.var_manual_model_weight_override,
             command=self._on_manual_model_weight_override_toggled,
         ).pack(anchor="w")
         ttk.Label(
             lf_mw,
-            text=(
-                "Inharmonic model weight β (%); α = 1 − β. When disabled, "
-                "α and β are derived from the current spectral analysis."
-            ),
-            wraplength=260,
+            text="Inharmonic model weight β (%); α = 1 − β. This does not replace final density H/I/S controls.",
+            wraplength=520,
             justify="left",
         ).pack(anchor="w", pady=(4, 0))
         self.var_i_weight = tk.IntVar(value=5)
@@ -694,17 +811,7 @@ class RobustOrchestratorApp:
         self.lbl_weight.pack(anchor="w")
         self.scale_i_weight.state(["disabled"])
 
-        # Frame 3: Actions
-        frame_act = tk.Frame(self.master)
-        frame_act.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        self.btn_run = ttk.Button(frame_act, text="RUN PIPELINE", command=self._run)
-        self.btn_run.pack(fill=tk.X)
-        self.btn_stop = ttk.Button(frame_act, text="STOP", state=tk.DISABLED, command=self._stop)
-        self.btn_stop.pack(pady=5)
-        self.lbl_status = ttk.Label(frame_act, text="Idle", font=("Arial", 10, "bold"))
-        self.lbl_status.pack()
-        self.txt_log = tk.Text(frame_act, height=12, state=tk.DISABLED, bg="#f0f0f0")
-        self.txt_log.pack(fill=tk.BOTH, expand=True)
+        self._update_fixed_fft_visibility()
 
     def _on_window_changed(self, event=None):
         """Update window parameter visibility based on selected window type."""
@@ -723,6 +830,15 @@ class RobustOrchestratorApp:
             self.entry_n_fft.config(state=state)
             self.entry_hop_length.config(state=state)
             self.entry_zero_padding.config(state=state)
+        if hasattr(self, "lbl_fixed_fft_override"):
+            self.lbl_fixed_fft_override.config(
+                foreground="#666666" if is_smart else "#2e7d32",
+                text=(
+                    "Fixed FFT controls are overridden by tier strategy when enabled."
+                    if is_smart
+                    else "Fixed FFT controls are active (tier strategy disabled)."
+                ),
+            )
 
     def _update_window_params_visibility(self):
         """Show/hide window-specific parameters based on window type."""
@@ -752,6 +868,23 @@ class RobustOrchestratorApp:
             self.scale_i_weight.state(["!disabled"])
         else:
             self.scale_i_weight.state(["disabled"])
+
+    def _density_mode_internal(self) -> str:
+        display = str(self.combo_density_mode.get() or "").strip()
+        return DENSITY_MODE_LABEL_TO_INTERNAL.get(display, "his_weighted")
+
+    def _open_doc(self, relative_path: str) -> None:
+        doc_path = (MAIN_DIR / relative_path).resolve()
+        if not doc_path.is_file():
+            messagebox.showerror("Missing file", f"Could not find: {doc_path}")
+            return
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(str(doc_path))  # type: ignore[attr-defined]
+            else:
+                webbrowser.open(doc_path.as_uri())
+        except Exception as exc:
+            messagebox.showerror("Open failed", f"Could not open document:\n{exc}")
     
     def _process_log_queue(self):
         while not self.log_queue.empty():
@@ -824,6 +957,24 @@ class RobustOrchestratorApp:
             tolerance = float(params.get('tolerance', 5.0))
             if tolerance <= 0 or tolerance > 100:
                 return False, f"Tolerance ({tolerance}) should be in range (0, 100] Hz"
+
+            density_mode = str(
+                params.get("density_summation_mode", "his_weighted") or "his_weighted"
+            ).strip().lower()
+            if density_mode not in {"his_weighted", "harmonic_only", "inharmonic_only", "subbass_only"}:
+                return False, f"Invalid density_summation_mode: {density_mode}"
+            for k in (
+                "harmonic_density_weight",
+                "inharmonic_density_weight",
+                "subbass_density_weight",
+            ):
+                _ = float(params.get(k, 0.0))
+            dst = float(params.get("density_salience_threshold_db", -45.0))
+            if dst >= 0.0 or dst < -200.0:
+                return False, f"density_salience_threshold_db ({dst}) should be in [-200, 0)"
+            dceil = float(params.get("density_frequency_ceiling_hz", 5000.0))
+            if dceil <= 0.0:
+                return False, f"density_frequency_ceiling_hz ({dceil}) must be positive"
             
             # Validate window-specific parameters
             if window == "kaiser":
@@ -905,6 +1056,12 @@ class RobustOrchestratorApp:
                 'kaiser_beta': kaiser_beta,
                 'gaussian_std': gaussian_std,
                 'spectral_masking_enabled': False,  # Physical density workflow: masking not exposed in GUI
+                'density_summation_mode': self._density_mode_internal(),
+                'harmonic_density_weight': float(self.entry_density_w_h.get() or "1.0"),
+                'inharmonic_density_weight': float(self.entry_density_w_i.get() or "0.5"),
+                'subbass_density_weight': float(self.entry_density_w_s.get() or "0.25"),
+                'density_salience_threshold_db': float(self.entry_density_salience_threshold_db.get() or "-45.0"),
+                'density_frequency_ceiling_hz': float(self.entry_density_frequency_ceiling_hz.get() or "5000.0"),
                 'compile': self.var_compile.get(),
                 'smart': self.var_smart.get(),
                 'use_tsne': self.var_use_tsne.get(),
@@ -920,6 +1077,36 @@ class RobustOrchestratorApp:
                 messagebox.showerror("Validation Error", f"Invalid parameters:\n{error_msg}")
                 self._reset()
                 return
+
+            # Compact pre-run summary
+            log.info("RUN SUMMARY (pre-execution)")
+            log.info("Final density configuration:")
+            log.info("  mode=%s", params["density_summation_mode"])
+            log.info("  wH=%.6f", float(params["harmonic_density_weight"]))
+            log.info("  wI=%.6f", float(params["inharmonic_density_weight"]))
+            log.info("  wS=%.6f", float(params["subbass_density_weight"]))
+            log.info(
+                "  threshold=%.2f dB | ceiling=%.2f Hz",
+                float(params["density_salience_threshold_db"]),
+                float(params["density_frequency_ceiling_hz"]),
+            )
+            tier_or_fixed = "tier strategy" if bool(params.get("smart", False)) else "fixed FFT"
+            log.info("STFT configuration:")
+            log.info(
+                "  window=%s | mode=%s | n_fft=%s | hop=%s | zp=%s",
+                params["win"],
+                tier_or_fixed,
+                self.entry_n_fft.get() if not bool(params.get("smart", False)) else "overridden_by_tier",
+                self.entry_hop_length.get() if not bool(params.get("smart", False)) else "overridden_by_tier",
+                self.entry_zero_padding.get() if not bool(params.get("smart", False)) else "overridden_by_tier",
+            )
+            log.info(
+                "  peak range dB=[%.2f, %.2f] | harmonic tolerance=%.3f Hz | adaptive=%s",
+                float(params["db_min"]),
+                float(params["db_max"]),
+                float(params["tolerance"]),
+                bool(params["use_adaptive_tolerance"]),
+            )
             
             # Log all parameter activations
             log.info("=" * 60)
@@ -941,13 +1128,35 @@ class RobustOrchestratorApp:
                 )
             else:
                 log.info(
-                    "Model-weight placeholder: H=0.500, I=0.500; final "
-                    "component ratios are computed from current spectral "
-                    "analysis (ACTIVATED)."
+                    "Model-weight (component-energy) placeholder: "
+                    "H=0.500, I=0.500; final component ratios are computed "
+                    "from current spectral analysis (ACTIVATED)."
                 )
             log.info(f"Frequency Range: [{params['freq_min']:.1f}, {params['freq_max']:.1f}] Hz (ACTIVATED)")
             log.info(f"Magnitude Range: [{params['db_min']:.1f}, {params['db_max']:.1f}] dB (ACTIVATED)")
             log.info(f"Tolerance: {params['tolerance']:.2f} Hz | Adaptive: {params['use_adaptive_tolerance']} (ACTIVATED)")
+            log.info(
+                "Final density controls: mode=%s, wH=%.3f, wI=%.3f, wS=%.3f, threshold=%.1f dB, ceiling=%.1f Hz (ACTIVATED)",
+                params["density_summation_mode"],
+                params["harmonic_density_weight"],
+                params["inharmonic_density_weight"],
+                params["subbass_density_weight"],
+                params["density_salience_threshold_db"],
+                params["density_frequency_ceiling_hz"],
+            )
+            log.info("Final density config:")
+            log.info("density_summation_mode = %s", params["density_summation_mode"])
+            log.info("wH = %.6f", float(params["harmonic_density_weight"]))
+            log.info("wI = %.6f", float(params["inharmonic_density_weight"]))
+            log.info("wS = %.6f", float(params["subbass_density_weight"]))
+            log.info(
+                "density_salience_threshold_db = %.6f",
+                float(params["density_salience_threshold_db"]),
+            )
+            log.info(
+                "density_frequency_ceiling_hz = %.6f",
+                float(params["density_frequency_ceiling_hz"]),
+            )
             log.info(f"STFT Options: Zero Padding={params.get('zero_padding', 1)} | Time Avg: {params['avg']} (ACTIVATED)")
             log.info(f"90-Tier Clustering: {params['smart']} | Auto-Compile: {params['compile']} (ACTIVATED)")
             log.info(
@@ -975,6 +1184,7 @@ class RobustOrchestratorApp:
             "Stage 1 (per-note spectral analysis) then Stage 2 (compilation)."
         )
         log.info("=" * 80)
+        folder_summaries: List[Dict[str, Any]] = []
 
         for i, folder in enumerate(self.processing_queue):
             if self.stop_requested:
@@ -995,6 +1205,9 @@ class RobustOrchestratorApp:
             
             try:
                 self._process_folder_complete_pipeline(folder, params)
+                _summary = self._collect_post_run_summary(folder)
+                if _summary is not None:
+                    folder_summaries.append(_summary)
                 log.info("")
                 log.info("=" * 80)
                 log.info(f"✓ FOLDER {i+1}/{total} COMPLETE: {folder.name}")
@@ -1015,8 +1228,78 @@ class RobustOrchestratorApp:
         log.info("ALL FOLDERS PROCESSING COMPLETE")
         log.info("=" * 80)
         log.info("Done.")
-        messagebox.showinfo("Info", "All folders processed successfully!")
+        if folder_summaries:
+            _last = folder_summaries[-1]
+            _msg = (
+                "Run summary\n\n"
+                f"Files processed: {_last['files_processed']}\n"
+                f"Files failed: {_last['files_failed']}\n"
+                f"Workbook path: {_last['workbook_path']}\n"
+                "Primary metric: final_note_density_salience_weighted\n"
+                f"Mean final_note_density_salience_weighted: {_last['mean_final_density']:.6f}\n"
+                f"Top 5 densest notes: {', '.join(_last['top5_notes'])}\n"
+                f"Bottom 5 densest notes: {', '.join(_last['bottom5_notes'])}\n"
+                f"f0 fallback count: {_last['f0_fallback_count']}"
+            )
+            messagebox.showinfo("Run complete", _msg)
+        else:
+            messagebox.showinfo("Run complete", "All folders processed.")
         self._reset()
+
+    def _collect_post_run_summary(self, folder: Path) -> Optional[Dict[str, Any]]:
+        analysis_results_dir = folder / "analysis_results"
+        research_path = analysis_results_dir / "compiled_density_metrics_research.xlsx"
+        if not research_path.is_file():
+            return None
+        try:
+            sdm = pd.read_excel(
+                research_path,
+                sheet_name="Spectral_Density_Metrics",
+                engine="openpyxl",
+            )
+            if sdm.empty:
+                return None
+            files_total = len(
+                [
+                    f
+                    for f in folder.glob("*")
+                    if f.suffix.lower() in VALID_AUDIO_EXTENSIONS
+                ]
+            )
+            files_processed = len(
+                list(analysis_results_dir.rglob("spectral_analysis.xlsx"))
+            )
+            files_failed = max(0, int(files_total - files_processed))
+            score = pd.to_numeric(
+                sdm.get("final_note_density_salience_weighted"), errors="coerce"
+            )
+            notes = sdm.get("Note")
+            ranked = pd.DataFrame({"Note": notes, "score": score}).dropna()
+            top5 = ranked.nlargest(5, "score")["Note"].astype(str).tolist()
+            bottom5 = ranked.nsmallest(5, "score")["Note"].astype(str).tolist()
+            fallback_count = 0
+            if "acoustic_validation_status" in sdm.columns:
+                fallback_count = int(
+                    sdm["acoustic_validation_status"]
+                    .astype(str)
+                    .str.contains(
+                        "nominal_fallback_used_not_acoustically_verified",
+                        na=False,
+                    )
+                    .sum()
+                )
+            return {
+                "files_processed": int(files_processed),
+                "files_failed": int(files_failed),
+                "workbook_path": str(research_path),
+                "mean_final_density": float(score.mean(skipna=True) or 0.0),
+                "top5_notes": top5,
+                "bottom5_notes": bottom5,
+                "f0_fallback_count": fallback_count,
+            }
+        except Exception as exc:
+            log.warning("Could not build post-run summary for %s: %s", folder, exc)
+            return None
 
     def _process_folder_complete_pipeline(
         self, folder: Path, params: Dict[str, Any]
@@ -1125,10 +1408,27 @@ class RobustOrchestratorApp:
             inharmonic_weight = 0.5
             auto_model_weights = True
             log.info(
-                "Model-weight placeholder: H=0.500, I=0.500; final "
-                "component ratios are computed from current spectral "
-                "analysis."
+                "Model-weight (component-energy) placeholder: "
+                "H=0.500, I=0.500; final component ratios are computed "
+                "from current spectral analysis."
             )
+
+        log.info("Final density config:")
+        log.info(
+            "density_summation_mode = %s",
+            str(params.get("density_summation_mode", "his_weighted") or "his_weighted"),
+        )
+        log.info("wH = %.6f", float(params.get("harmonic_density_weight", 1.0)))
+        log.info("wI = %.6f", float(params.get("inharmonic_density_weight", 0.5)))
+        log.info("wS = %.6f", float(params.get("subbass_density_weight", 0.25)))
+        log.info(
+            "density_salience_threshold_db = %.6f",
+            float(params.get("density_salience_threshold_db", -45.0)),
+        )
+        log.info(
+            "density_frequency_ceiling_hz = %.6f",
+            float(params.get("density_frequency_ceiling_hz", 5000.0)),
+        )
 
         successful_files = 0
         failed_files = 0
@@ -1325,6 +1625,12 @@ class RobustOrchestratorApp:
                         time_avg=params['avg'],
                         tier=tier_name,
                         spectral_masking_enabled=False,
+                        density_summation_mode=params.get("density_summation_mode", "his_weighted"),
+                        harmonic_density_weight=float(params.get("harmonic_density_weight", 1.0)),
+                        inharmonic_density_weight=float(params.get("inharmonic_density_weight", 0.5)),
+                        subbass_density_weight=float(params.get("subbass_density_weight", 0.25)),
+                        density_salience_threshold_db=float(params.get("density_salience_threshold_db", -45.0)),
+                        density_frequency_ceiling_hz=float(params.get("density_frequency_ceiling_hz", 5000.0)),
                         use_tsne=params.get('use_tsne', False),
                         use_umap=params.get('use_umap', False),
                         detect_anomalies=params.get(

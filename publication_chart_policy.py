@@ -116,6 +116,7 @@ FORBIDDEN_DEFAULT_METRIC_NAMES: frozenset[str] = frozenset(
         "Density Metric",
         "Spectral Density Metric",
         "Combined Density Metric",
+        "density_weighted_sum_cdm_mean",
         "Filtered Density Metric",
     }
 )

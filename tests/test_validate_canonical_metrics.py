@@ -329,6 +329,29 @@ def test_pca_excludes_non_independent_metrics(synthetic_corpus, dictionary):
     assert "component_harmonic_energy_ratio" in used
 
 
+def test_pca_default_feature_list_excludes_legacy_and_alias_density_metrics(dictionary):
+    feats = set(dictionary.canonical_independent_for_pca())
+    forbidden = {
+        "density_weighted_sum_cdm_mean",
+        "Combined Density Metric",
+        "Weighted Combined Metric",
+        "Total sum",
+        "density_metric_raw",
+        "density_metric_normalized",
+        "energy_weighted_component_density_diagnostic",
+    }
+    assert feats.isdisjoint(forbidden)
+
+
+def test_final_density_primary_markers_and_legacy_not_primary(dictionary):
+    assert "final_note_density_salience_weighted" in dictionary.metrics
+    assert "final_note_density_count_based" in dictionary.metrics
+    assert dictionary.metrics["final_note_density_salience_weighted"]["status"] != "legacy"
+    assert dictionary.metrics["final_note_density_count_based"]["status"] != "legacy"
+    if "Combined Density Metric" in dictionary.metrics:
+        assert dictionary.metrics["Combined Density Metric"]["status"] == "legacy"
+
+
 def test_pca_loadings_shape(synthetic_corpus, dictionary):
     pca_feats = dictionary.canonical_independent_for_pca()
     pca_result = run_pca_on_canonical(synthetic_corpus, pca_feats, minimum_samples=4)

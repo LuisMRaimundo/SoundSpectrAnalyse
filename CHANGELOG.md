@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`Legacy_Density_Metrics` (per-note export, default ON):** every **`spectral_analysis.xlsx`** now includes a dedicated sheet with **`Density Metric`**, **`Spectral Density Metric`**, **`Filtered Density Metric`**, **`Combined Density Metric`**, and **`spectral_masking_enabled`** (`False` — no v5 masking GUI in v6). Stage 2 **`read_excel_metrics`** merges this sheet so **`Weighted Combined Metric`** is recomputed from real SDM/FDM on **`Diagnostic_Metrics`** / **`Legacy_Compatibility`**, not from zero placeholders.
-- **Research workbook (`compiled_density_metrics_research.xlsx`):** **`Spectral_Density_Metrics`** includes **`Combined Density Metric`**, derived **`density_weighted_sum_cdm_mean`** = \((\texttt{density\_weighted\_sum} + \texttt{Combined Density Metric}) / 2\), soft column highlights (blue / yellow / lavender), and merge from compiled **`Legacy_Compatibility`**. Tests: **`tests/test_legacy_density_export.py`**, extended **`tests/test_research_density_export.py`**.
+- **Research workbook (`compiled_density_metrics_research.xlsx`) historical note:** this changelog entry describes the behavior at the time of that release. In the current contract, **`Combined Density Metric`** remains legacy-only (not primary `Spectral_Density_Metrics`), and **`density_weighted_sum_cdm_mean`** is legacy opt-in only.
 
 ### Fixed
 

@@ -288,6 +288,53 @@ DENSITY_METRICS_MAIN_COLUMNS: List[str] = [
     "linear_amplitude_fraction_nonharmonic_of_total",
     "linear_amplitude_batch_alignment_factor",
     "harmonic_order_count",
+    "acoustic_f0_status",
+    "f0_used_for_density_source",
+    "harmonic_occupancy_detected_order_count",
+    "expected_harmonic_slot_count",
+    "detected_harmonic_slot_count",
+    "harmonic_slot_expected_count",
+    "harmonic_slot_matched_count",
+    "harmonic_slot_coverage_ratio",
+    "body_weighted_effective_density",
+    "low_mid_energy_ratio",
+    "harmonic_body_density",
+    "expected_harmonic_slots_up_to_5000hz",
+    "harmonic_body_density_normalized",
+    "residual_body_contribution",
+    "residual_body_contribution_capped",
+    "spectral_body_thickness_index",
+    "salient_harmonic_order_count_up_to_5000hz",
+    "expected_harmonic_order_count_up_to_5000hz",
+    "salient_harmonic_coverage_up_to_5000hz",
+    "salient_harmonic_mass_up_to_5000hz",
+    "salient_harmonic_order_count_up_to_density_ceiling_hz",
+    "expected_harmonic_order_count_up_to_density_ceiling_hz",
+    "salient_harmonic_coverage_up_to_density_ceiling_hz",
+    "salient_harmonic_mass_up_to_density_ceiling_hz",
+    "salient_odd_harmonic_count_up_to_5000hz",
+    "salient_even_harmonic_count_up_to_5000hz",
+    "odd_even_harmonic_energy_ratio",
+    "salient_inharmonic_log_bin_count_up_to_5000hz",
+    "salient_subbass_particle_count",
+    "salient_inharmonic_log_bin_count_up_to_density_ceiling_hz",
+    "salient_subbass_particle_count_up_to_density_ceiling_hz",
+    "final_note_density_count_based",
+    "final_note_density_salience_weighted",
+    "harmonic_density_component",
+    "inharmonic_density_component",
+    "subbass_density_component",
+    "harmonic_density_weight",
+    "inharmonic_density_weight",
+    "subbass_density_weight",
+    "density_summation_mode",
+    "density_salience_threshold_db",
+    "density_frequency_ceiling_hz",
+    "core_harmonic_energy_ratio",
+    "core_residual_energy_ratio",
+    "core_subbass_energy_ratio",
+    "harmonic_effective_power_density_normalized",
+    "energy_weighted_component_density_diagnostic",
     "spectral_entropy",
     "density_source_formula",
     "density_normalization_scope",
@@ -331,6 +378,7 @@ DENSITY_METRICS_MAIN_COLUMNS: List[str] = [
 DENSITY_METRICS_MINIMAL_DISPLAY_COLUMNS: List[str] = [
     "Note",
     "density_metric_raw",
+    "energy_weighted_component_density_diagnostic",
     "density_metric_normalized",
     "weighted_harmonic_density_contribution",
     "weighted_inharmonic_density_contribution",
@@ -338,6 +386,50 @@ DENSITY_METRICS_MINIMAL_DISPLAY_COLUMNS: List[str] = [
     "component_harmonic_energy_ratio",
     "component_inharmonic_energy_ratio",
     "component_subbass_energy_ratio",
+    "acoustic_f0_status",
+    "f0_used_for_density_source",
+    "harmonic_occupancy_detected_order_count",
+    "expected_harmonic_slot_count",
+    "detected_harmonic_slot_count",
+    "harmonic_slot_expected_count",
+    "harmonic_slot_matched_count",
+    "harmonic_slot_coverage_ratio",
+    "body_weighted_effective_density",
+    "low_mid_energy_ratio",
+    "harmonic_body_density",
+    "harmonic_body_density_normalized",
+    "residual_body_contribution_capped",
+    "spectral_body_thickness_index",
+    "salient_harmonic_order_count_up_to_5000hz",
+    "expected_harmonic_order_count_up_to_5000hz",
+    "salient_harmonic_coverage_up_to_5000hz",
+    "salient_harmonic_mass_up_to_5000hz",
+    "salient_harmonic_order_count_up_to_density_ceiling_hz",
+    "expected_harmonic_order_count_up_to_density_ceiling_hz",
+    "salient_harmonic_coverage_up_to_density_ceiling_hz",
+    "salient_harmonic_mass_up_to_density_ceiling_hz",
+    "salient_odd_harmonic_count_up_to_5000hz",
+    "salient_even_harmonic_count_up_to_5000hz",
+    "odd_even_harmonic_energy_ratio",
+    "salient_inharmonic_log_bin_count_up_to_5000hz",
+    "salient_subbass_particle_count",
+    "salient_inharmonic_log_bin_count_up_to_density_ceiling_hz",
+    "salient_subbass_particle_count_up_to_density_ceiling_hz",
+    "final_note_density_count_based",
+    "final_note_density_salience_weighted",
+    "harmonic_density_component",
+    "inharmonic_density_component",
+    "subbass_density_component",
+    "harmonic_density_weight",
+    "inharmonic_density_weight",
+    "subbass_density_weight",
+    "density_summation_mode",
+    "density_salience_threshold_db",
+    "density_frequency_ceiling_hz",
+    "core_harmonic_energy_ratio",
+    "core_residual_energy_ratio",
+    "core_subbass_energy_ratio",
+    "harmonic_effective_power_density_normalized",
     "Harmonic Partials sum",
     "Inharmonic Partials sum",
     "Sub-bass sum",
@@ -462,14 +554,10 @@ DENSITY_METRICS_LEGACY_OPTIONAL_COLUMNS: frozenset[str] = frozenset({"unique_har
 PCA_FEATURE_COLUMNS: List[str] = [
     "effective_partial_count",
     "effective_partial_density",
-    "component_harmonic_energy_ratio",
-    "component_inharmonic_energy_ratio",
-    "harmonic_inharmonic_ratio",
     "discrete_metric_d3",
     "discrete_metric_d10",
     "discrete_metric_d17",
     "discrete_metric_d24",
-    "harmonic_order_count",
     "spectral_entropy",
 ]
 
@@ -1058,6 +1146,43 @@ def _prepare_df_for_density_export(df: pd.DataFrame) -> pd.DataFrame:
         out["Spectral Entropy"] = pd.to_numeric(out["spectral_entropy"], errors="coerce")
     if "harmonic_order_count" not in out.columns and "unique_harmonic_order_count" in out.columns:
         out["harmonic_order_count"] = pd.to_numeric(out["unique_harmonic_order_count"], errors="coerce")
+    if "harmonic_occupancy_detected_order_count" not in out.columns and "detected_harmonic_slot_count" in out.columns:
+        out["harmonic_occupancy_detected_order_count"] = pd.to_numeric(
+            out["detected_harmonic_slot_count"], errors="coerce"
+        )
+    if "expected_harmonic_slot_count" not in out.columns and "harmonic_slot_expected_count" in out.columns:
+        out["expected_harmonic_slot_count"] = pd.to_numeric(out["harmonic_slot_expected_count"], errors="coerce")
+    if "harmonic_slot_expected_count" not in out.columns and "expected_harmonic_slot_count" in out.columns:
+        out["harmonic_slot_expected_count"] = pd.to_numeric(out["expected_harmonic_slot_count"], errors="coerce")
+    if "harmonic_slot_matched_count" not in out.columns and "detected_harmonic_slot_count" in out.columns:
+        out["harmonic_slot_matched_count"] = pd.to_numeric(out["detected_harmonic_slot_count"], errors="coerce")
+    if "detected_harmonic_slot_count" not in out.columns and "harmonic_occupancy_detected_order_count" in out.columns:
+        out["detected_harmonic_slot_count"] = pd.to_numeric(
+            out["harmonic_occupancy_detected_order_count"], errors="coerce"
+        )
+    if "harmonic_occupancy_detected_order_count" not in out.columns and "harmonic_order_count" in out.columns:
+        out["harmonic_occupancy_detected_order_count"] = pd.to_numeric(out["harmonic_order_count"], errors="coerce")
+    if "harmonic_slot_coverage_ratio" not in out.columns:
+        exp = (
+            pd.to_numeric(out["harmonic_slot_expected_count"], errors="coerce")
+            if "harmonic_slot_expected_count" in out.columns
+            else pd.Series(np.nan, index=out.index)
+        )
+        matched = (
+            pd.to_numeric(out["harmonic_slot_matched_count"], errors="coerce")
+            if "harmonic_slot_matched_count" in out.columns
+            else pd.Series(np.nan, index=out.index)
+        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out["harmonic_slot_coverage_ratio"] = matched / exp.replace(0, np.nan)
+    if "core_harmonic_energy_ratio" not in out.columns and "harmonic_energy_ratio" in out.columns:
+        out["core_harmonic_energy_ratio"] = pd.to_numeric(out["harmonic_energy_ratio"], errors="coerce")
+    if "core_residual_energy_ratio" not in out.columns and "residual_energy_ratio" in out.columns:
+        out["core_residual_energy_ratio"] = pd.to_numeric(out["residual_energy_ratio"], errors="coerce")
+    if "core_subbass_energy_ratio" not in out.columns and "subbass_energy_ratio" in out.columns:
+        out["core_subbass_energy_ratio"] = pd.to_numeric(out["subbass_energy_ratio"], errors="coerce")
+    if "energy_weighted_component_density_diagnostic" not in out.columns and "density_metric_raw" in out.columns:
+        out["energy_weighted_component_density_diagnostic"] = pd.to_numeric(out["density_metric_raw"], errors="coerce")
 
     hcol = "linear_sum_amplitude_harmonic"
     icol = "linear_sum_amplitude_inharmonic_partial"
@@ -3534,6 +3659,7 @@ def _build_density_metrics_main_sheet(
         "harmonic_spectrum_source": "",
         "inharmonic_spectrum_source": "",
         "subbass_spectrum_source": "",
+        "density_summation_mode": "his_weighted",
         # AUDIT FIX (Density_Metrics component basis) — the scalar
         # fallback path consumes already-aggregated rows that don't go
         # through the per-note extractor, so the basis fields must be
@@ -3546,6 +3672,12 @@ def _build_density_metrics_main_sheet(
     for col, default in {**_NUMERIC_AUDIT_DEFAULTS, **_TEXT_AUDIT_DEFAULTS}.items():
         if col not in out_df.columns:
             out_df[col] = default
+
+    # Keep the sheet layout stable even when source fixtures provide only
+    # partial metric sets; missing values remain explicit as NaN.
+    for col in DENSITY_METRICS_MINIMAL_DISPLAY_COLUMNS:
+        if col not in out_df.columns:
+            out_df[col] = np.nan
 
     # Final column order strictly matches DENSITY_METRICS_MINIMAL_DISPLAY_COLUMNS
     # for downstream consumers that key off the canonical layout.
@@ -3566,6 +3698,19 @@ def _enrich_compiled_metadata_from_df(metadata: Dict[str, Any], df: pd.DataFrame
     meta.setdefault("hop_length", pick("Hop Length"))
     meta.setdefault("harmonic_tolerance", pick("Tolerance (Hz)") or pick("Search Band (cents)"))
     meta.setdefault("snr_threshold_db", pick("SNR Threshold (dB)"))
+    meta.setdefault("density_summation_mode", pick("density_summation_mode"))
+    meta.setdefault("harmonic_density_weight", pick("harmonic_density_weight"))
+    meta.setdefault("inharmonic_density_weight", pick("inharmonic_density_weight"))
+    meta.setdefault("subbass_density_weight", pick("subbass_density_weight"))
+    meta.setdefault("density_salience_threshold_db", pick("density_salience_threshold_db"))
+    meta.setdefault("density_frequency_ceiling_hz", pick("density_frequency_ceiling_hz"))
+    meta.setdefault("frequency_min_hz", pick("frequency_min_hz"))
+    meta.setdefault("frequency_max_hz", pick("frequency_max_hz"))
+    meta.setdefault("magnitude_min_db", pick("magnitude_min_db"))
+    meta.setdefault("magnitude_max_db", pick("magnitude_max_db"))
+    meta.setdefault("zero_padding", pick("zero_padding"))
+    meta.setdefault("window_type", meta.get("window"))
+    meta.setdefault("ANALYSIS_SCHEMA_VERSION", pick("analysis_schema_version") or meta.get("analysis_schema_version"))
     meta.setdefault("rms_normalisation_enabled", True)
     meta.setdefault("smoothing_enabled", None)
     meta.setdefault("spectral_masking_enabled", False)
@@ -3615,8 +3760,15 @@ def _compute_optional_pca_sheets(
             continue
         feature_sources.append((feat, feat))
 
-    if bool(pca_include_dissonance) and "selected_dissonance_value" in work.columns:
-        feature_sources.append(("selected_dissonance_value", "selected_dissonance_value"))
+    if bool(pca_include_dissonance):
+        for dissonance_col in (
+            "selected_dissonance_value",
+            "sethares_dissonance",
+            "hutchinson_knopoff_dissonance",
+            "vassilakis_dissonance",
+        ):
+            if dissonance_col in work.columns:
+                feature_sources.append((dissonance_col, dissonance_col))
 
     if len(feature_sources) < 3:
         note = "PCA skipped: fewer than three valid numerical analysis features after column resolution."
