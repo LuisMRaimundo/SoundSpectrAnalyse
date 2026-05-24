@@ -160,7 +160,7 @@ if you distribute frozen builds.
 
 ## Acknowledgements
 
-This project was developed by **Luís Raimundo** with the support and funding of the **Fundação para a Ciência e a Tecnologia (FCT)** and **Universidade NOVA de Lisboa**.
+This project was developed by **Luís Raimundo** with the support and funding of the **FFoundation for Science and Technology (FST))** and **NOVA University of Lisbon**.
 
 **Funding DOI:** [https://doi.org/10.54499/2020.08817.BD](https://doi.org/10.54499/2020.08817.BD)
 
