@@ -224,8 +224,8 @@ This section is **orthogonal** to the Stage 1/2 Excel contract above: it documen
 | **`docs/formula_extraction/FORMULA_EXTRACTION_INDEX.md`** | Index to Pass **1–15** formula-extraction tables (Python expressions → notation). |
 | **`docs/formula_validation/FORMULA_VALIDATION_PLAN_INDEX.md`** | Index to Pass **1–15** validation plans (fixtures and suggested assertions). |
 | **`tests/formula_validation/`** | Pytest modules implementing those plans for Passes **1–15**. |
-| **`VALIDATION_STATUS_812_PASSED_PASSES_1_15.md`** (repo root) | Recorded cycle: full suite **812 passed** (39 skipped, 0 failed); formula-validation **149 passed** (0 failed). |
-| **`METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`** (repo root) | Methodological note on the extraction → validation workflow. |
+| **`docs/validation/VALIDATION_STATUS.md`** | Formula-validation status summary (Passes 1–15) without fixed full-suite pass/fail assertions. |
+| **`docs/validation/METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`** | Methodological note on the extraction → validation workflow. |
 | **`CODE_FORMULA_TRACEABILITY_TABLE.md`** (repo root) | Optional code ↔ formula traceability table. |
 
 **Cautious interpretation:** the formula-validation corpus supports **internal consistency** between the documented mathematical formulas and the tested Python implementations. It verifies formula/code agreement for **selected numerical fixtures**. It does **not**, by itself, prove scientific optimality, universal correctness, or full acoustic validity of the models.

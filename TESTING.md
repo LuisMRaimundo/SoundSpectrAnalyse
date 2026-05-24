@@ -21,7 +21,7 @@ The marker is registered in `pyproject.toml` under
 python -m pytest tests/formula_validation/ -q
 ```
 
-**Meaning (cautious):** these tests support **internal consistency** between the documented mathematical formulas and the tested Python implementations for the **selected numerical fixtures** in each validation plan. They do **not**, by themselves, prove scientific optimality, universal correctness, or full acoustic validity of the models. Counts and pass coverage for a recorded cycle are summarised in **`VALIDATION_STATUS_812_PASSED_PASSES_1_15.md`**; methodology in **`METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`**.
+**Meaning (cautious):** these tests support **internal consistency** between the documented mathematical formulas and the tested Python implementations for the **selected numerical fixtures** in each validation plan. They do **not**, by themselves, prove scientific optimality, universal correctness, or full acoustic validity of the models. Formula-validation status is summarised in **`docs/validation/VALIDATION_STATUS.md`**; methodology in **`docs/validation/METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`**. Current full-suite status is tracked in **`docs/FINAL_ACCEPTANCE_REPORT.md`** and **`docs/KNOWN_BASELINE_TEST_FAILURES.md`**.
 
 ## How to run
 

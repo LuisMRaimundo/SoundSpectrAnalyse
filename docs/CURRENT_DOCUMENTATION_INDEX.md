@@ -1,6 +1,6 @@
 # Current documentation index
 
-**Last audit:** 2026-05-17 (legacy density export + research compromise column / highlights; prior passes 2026-05-14, 2026-05-13). **Formula validation:** Passes **1–15** completed in pytest (`tests/formula_validation/`); see **`VALIDATION_STATUS_812_PASSED_PASSES_1_15.md`** and **`METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`**.  
+**Last audit:** 2026-05-17 (legacy density export + research compromise column / highlights; prior passes 2026-05-14, 2026-05-13). **Formula validation:** Passes **1–15** completed in pytest (`tests/formula_validation/`); see **`docs/validation/VALIDATION_STATUS.md`** and **`docs/validation/METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`**.  
 **Pipeline contract (high level):** `proc_audio.AudioProcessor` → per-note `spectral_analysis.xlsx` → `compile_metrics.compile_density_metrics_with_pca` → `compiled_density_metrics.xlsx`  
 **Schema / export version strings:** see per-workbook `Analysis_Metadata` (`ANALYSIS_SCHEMA_VERSION`, `pipeline_contract_version`, `export_schema_version`, etc.) — this index does not duplicate those runtime values.
 
@@ -24,8 +24,8 @@
 | [docs/COMPUTATIONAL_METRICS_CODE_REVIEW_REPORT.md](COMPUTATIONAL_METRICS_CODE_REVIEW_REPORT.md) | Read-only inventory of **project-owned** computational lines and functions (density, alignment, policy, compile hooks); prioritises mathematical formalisation. External libraries are black-boxed. |
 | [docs/formula_extraction/FORMULA_EXTRACTION_INDEX.md](formula_extraction/FORMULA_EXTRACTION_INDEX.md) | **Formula extraction (Passes 1–15):** tables mapping project-owned Python → mathematical notation. |
 | [docs/formula_validation/FORMULA_VALIDATION_PLAN_INDEX.md](formula_validation/FORMULA_VALIDATION_PLAN_INDEX.md) | **Formula-validation plans (Passes 1–15):** hand-checkable fixtures and suggested assertions (plans only; executable tests live under `tests/formula_validation/`). |
-| [VALIDATION_STATUS_812_PASSED_PASSES_1_15.md](../VALIDATION_STATUS_812_PASSED_PASSES_1_15.md) | **Recorded test cycle:** full suite **812 passed** (39 skipped, 0 failed); formula-validation **149 passed** (0 failed); Passes **1–15** completed. |
-| [METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md](../METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md) | Methodological note: extraction → validation workflow; what is and is not established by automated formula checks. |
+| [docs/validation/VALIDATION_STATUS.md](validation/VALIDATION_STATUS.md) | Formula-validation status note for Passes **1–15**; for current full-suite status see `docs/FINAL_ACCEPTANCE_REPORT.md` and `docs/KNOWN_BASELINE_TEST_FAILURES.md`. |
+| [docs/validation/METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md](validation/METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md) | Methodological note: extraction → validation workflow; what is and is not established by automated formula checks. |
 | [CODE_FORMULA_TRACEABILITY_TABLE.md](../CODE_FORMULA_TRACEABILITY_TABLE.md) | Optional **code ↔ formula** traceability (function, script, line ranges, expressions). |
 
 **Formula-validation (methodological, cautious):** the formula-validation corpus supports **internal consistency** between the documented mathematical formulas and the tested Python implementations. It verifies formula/code agreement for **selected numerical fixtures**. It does **not**, by itself, prove scientific optimality, universal correctness, or full acoustic validity of the models.

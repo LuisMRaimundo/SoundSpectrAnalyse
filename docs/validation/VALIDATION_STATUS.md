@@ -1,9 +1,10 @@
-# Validation Status — 812 Passed — Formula Passes 1–15
+# Validation Status — Formula Passes 1–15
 
 ## 1. Full test-suite result
 
-- **Full pytest result:** 812 passed, 39 skipped, 0 failed.
-- **Formula-validation suite:** 149 passed, 0 failed.
+- Current full-suite status is documented in:
+  - `docs/FINAL_ACCEPTANCE_REPORT.md`
+  - `docs/KNOWN_BASELINE_TEST_FAILURES.md`
 - **Formula-validation passes completed:** Passes 1–15.
 
 ## 2. Formula-validation coverage

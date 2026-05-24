@@ -4,7 +4,7 @@
 
 These documents define **small, hand-checkable numerical examples** so each case can confirm that **Python outputs match the formulas** recorded in the formula-extraction tables (**Passes 1–15**). The markdown files are **validation plans only** (they do not execute tests or modify application code). The corresponding **pytest** modules live under **`tests/formula_validation/`** and implement the plans for **Passes 1–15**.
 
-**Cautious interpretation:** the formula-validation corpus supports **internal consistency** between the documented mathematical formulas and the tested Python implementations. It verifies formula/code agreement for **selected numerical fixtures**. It does **not**, by itself, prove scientific optimality, universal correctness, or full acoustic validity of the models. See **`METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`** (repo root) and **`VALIDATION_STATUS_812_PASSED_PASSES_1_15.md`** for a recorded cycle summary.
+**Cautious interpretation:** the formula-validation corpus supports **internal consistency** between the documented mathematical formulas and the tested Python implementations. It verifies formula/code agreement for **selected numerical fixtures**. It does **not**, by itself, prove scientific optimality, universal correctness, or full acoustic validity of the models. See **`docs/validation/METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`** and **`docs/validation/VALIDATION_STATUS.md`** for methodology and status.
 
 ## 2. Documents
 
@@ -36,7 +36,7 @@ The consolidated source split from the extraction tree is still available as [`.
 
 ## 4. Related (repo root)
 
-- [`VALIDATION_STATUS_812_PASSED_PASSES_1_15.md`](../../VALIDATION_STATUS_812_PASSED_PASSES_1_15.md) — recorded pytest counts (full suite and formula-validation subset).  
-- [`METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`](../../METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md) — methodological note.  
+- [`VALIDATION_STATUS.md`](../validation/VALIDATION_STATUS.md) — formula-validation status note (Passes 1–15).  
+- [`METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`](../validation/METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md) — methodological note.  
 - [`CODE_FORMULA_TRACEABILITY_TABLE.md`](../../CODE_FORMULA_TRACEABILITY_TABLE.md) — optional traceability table.  
 - [`../formula_extraction/FORMULA_EXTRACTION_INDEX.md`](../formula_extraction/FORMULA_EXTRACTION_INDEX.md) — formula-extraction index.

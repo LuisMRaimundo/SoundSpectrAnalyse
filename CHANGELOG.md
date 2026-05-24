@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Pairwise dissonance internals:** replaced `for i / for j` nested loops in `dissonance_models.py` (`_dissonance_total_and_pairs`, `_dissonance_total_pairs_and_minamp`, `SetharesDissonance._pairwise_sum`) with upper-triangular index arrays (`np.triu_indices`) and pair-array evaluation.
 - **Citation metadata alignment:** updated `CITATION.cff` author metadata/ORCID, funding DOI identifier, and set `version: "3.7.0"` to match the current package version and README acknowledgements block.
-- **Repository spelling hygiene:** renamed installer path `instalers/` to `installers/` and updated installer README path references accordingly (git history follows the rename for path-level redirection).
+- **Repository spelling hygiene:** normalized installer path naming to `installers/` and updated installer README path references accordingly.
 
 ### Deprecated
 
@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- **Formula extraction & formula validation (Passes 1–15):** completed pytest coverage under **`tests/formula_validation/`** (149 tests, 0 failures in the recorded cycle) aligned with **`docs/formula_extraction/`** and **`docs/formula_validation/`** plans. Status: **`VALIDATION_STATUS_812_PASSED_PASSES_1_15.md`**. Methodology: **`METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`**. Optional traceability: **`CODE_FORMULA_TRACEABILITY_TABLE.md`**. Indexes: **`docs/formula_extraction/FORMULA_EXTRACTION_INDEX.md`**, **`docs/formula_validation/FORMULA_VALIDATION_PLAN_INDEX.md`**. Cross-linked **`README.md`**, **`docs/CURRENT_DOCUMENTATION_INDEX.md`**, **`docs/CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md`** §10, **`TECHNICAL_MANUAL.md`** §10.3, **`TESTING.md`**.
+- **Formula extraction & formula validation (Passes 1–15):** completed pytest coverage under **`tests/formula_validation/`** aligned with **`docs/formula_extraction/`** and **`docs/formula_validation/`** plans. Status: **`docs/validation/VALIDATION_STATUS.md`**. Methodology: **`docs/validation/METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`**. Optional traceability: **`CODE_FORMULA_TRACEABILITY_TABLE.md`**. Indexes: **`docs/formula_extraction/FORMULA_EXTRACTION_INDEX.md`**, **`docs/formula_validation/FORMULA_VALIDATION_PLAN_INDEX.md`**. Cross-linked **`README.md`**, **`docs/CURRENT_DOCUMENTATION_INDEX.md`**, **`docs/CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md`** §10, **`TECHNICAL_MANUAL.md`** §10.3, **`TESTING.md`**.
 - **Mathematical formalisation (first pass):** added **`docs/MATHEMATICAL_FORMALISATION_VERIFICATION_REPORT_FIRST_PASS.md`** (LaTeX formulas, code-grounded verification for six `density.py` functions) and linked it from **`docs/CURRENT_DOCUMENTATION_INDEX.md`**.
 
 - **Research export (`compiled_density_metrics_research.xlsx`):** documented Excel-safe behaviour (worksheet **AutoFilter** only—no ListObject **Table** XML), optional CLI metadata, and column-header sanitisation. Cross-linked **`README.md`**, **`docs/CURRENT_DOCUMENTATION_INDEX.md`**, **`docs/CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md`**, **`TECHNICAL_MANUAL.md`** §5.3, **`API_REFERENCE.md`**, **`TESTING.md`**, and the **`tools/export_research_density_workbook.py`** module docstring.

@@ -43,13 +43,13 @@ In `FORMULA_EXTRACTION_TABLE_DENSITY_FIRST_PASS.md`, the `np.abs(power)` row use
 - Exhaustive, line-by-line coverage of `proc_audio.py` (Pass 10 and 13 remain partial by design)  
 - Final thesis-ready prose (tables are reference artefacts, not narrative)
 
-**Executable regression checks** for Passes **1–15** live under **`tests/formula_validation/`** (see **`docs/formula_validation/FORMULA_VALIDATION_PLAN_INDEX.md`**, **`TESTING.md`**, and **`VALIDATION_STATUS_812_PASSED_PASSES_1_15.md`**). Those tests implement the plans; they do not replace domain review.
+**Executable regression checks** for Passes **1–15** live under **`tests/formula_validation/`** (see **`docs/formula_validation/FORMULA_VALIDATION_PLAN_INDEX.md`**, **`TESTING.md`**, and **`docs/validation/VALIDATION_STATUS.md`**). Those tests implement the plans; they do not replace domain review.
 
 ## 6. Related documentation
 
 - **`docs/formula_validation/FORMULA_VALIDATION_PLAN_INDEX.md`** — validation-plan index (fixtures / assertions).  
 - **`tests/formula_validation/`** — pytest implementation.  
-- **`VALIDATION_STATUS_812_PASSED_PASSES_1_15.md`** (repo root) — recorded pass counts for a completed cycle.  
-- **`METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`** (repo root) — workflow and cautious interpretation.  
+- **`docs/validation/VALIDATION_STATUS.md`** — formula-validation status note for Passes 1–15.  
+- **`docs/validation/METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`** — workflow and cautious interpretation.  
 - **`CODE_FORMULA_TRACEABILITY_TABLE.md`** (repo root) — optional code ↔ formula traceability.  
 - Legacy consolidated split: [`FORMULA_VALIDATION_PLAN.md`](FORMULA_VALIDATION_PLAN.md) (older umbrella; per-pass plans are authoritative for new work).

@@ -47,11 +47,12 @@ The method combined **static documentation** with **targeted dynamic checks**:
 
 ## 4. Validation result
 
-As recorded for the completed cycle:
+As documented for this completed formula-validation cycle:
 
-- **Full pytest result:** 812 passed, 39 skipped, 0 failed.  
-- **Formula-validation suite:** 149 passed, 0 failed.  
-- **Formula-validation passes completed:** 1–15.  
+- **Formula-validation passes completed:** 1–15.
+- Current full-suite and baseline status are tracked in:
+  - `docs/FINAL_ACCEPTANCE_REPORT.md`
+  - `docs/KNOWN_BASELINE_TEST_FAILURES.md`
 
 (Full-suite runs may still emit **warnings**—for example dependency deprecations or expected edge-case warnings—as summarised in the status document cited below; those warnings did not cause failures in the recorded run.)
 
@@ -91,4 +92,4 @@ The computational metrics were subjected to a formula-extraction and formula-val
 
 ## 9. Status note
 
-The file **`VALIDATION_STATUS_812_PASSED_PASSES_1_15.md`** (repository root) is the **final status record** for this validation cycle: it summarises the recorded pytest counts, lists Passes 1–15, states what the validation supports and does not prove, and notes warning behaviour during the full-suite run. **It is a static human-readable status note and does not execute tests.**
+The file **`docs/validation/VALIDATION_STATUS.md`** is the status record for this validation cycle: it summarises Passes 1–15 and validation scope/limits. **It is a static human-readable status note and does not execute tests.**

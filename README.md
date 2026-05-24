@@ -58,7 +58,7 @@ pip install --upgrade --force-reinstall -r requirements-pins.txt
 | **[docs/MATHEMATICAL_FORMALISATION_VERIFICATION_REPORT_FIRST_PASS.md](docs/MATHEMATICAL_FORMALISATION_VERIFICATION_REPORT_FIRST_PASS.md)** | LaTeX formalisation of six core `density.py` metrics (read-only vs code). |
 | **[docs/formula_extraction/FORMULA_EXTRACTION_INDEX.md](docs/formula_extraction/FORMULA_EXTRACTION_INDEX.md)** | Pass 1–15 **formula-extraction** tables (Python → notation); companion to validation plans and tests. |
 | **[docs/formula_validation/FORMULA_VALIDATION_PLAN_INDEX.md](docs/formula_validation/FORMULA_VALIDATION_PLAN_INDEX.md)** | Pass 1–15 **formula-validation plans** (fixtures and assertions; plans only). |
-| **[VALIDATION_STATUS_812_PASSED_PASSES_1_15.md](VALIDATION_STATUS_812_PASSED_PASSES_1_15.md)** | Recorded pytest counts: full suite **812 passed** (39 skipped, 0 failed); **149** formula-validation tests passed; Passes **1–15** completed. |
+| **[docs/validation/VALIDATION_STATUS.md](docs/validation/VALIDATION_STATUS.md)** | Formula-validation status note for Passes **1–15** (without fixed full-suite pass/fail claims). |
 | **[METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md](METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md)** | Methodological note on extraction → validation workflow and limits of what automated checks establish. |
 | **[CODE_FORMULA_TRACEABILITY_TABLE.md](CODE_FORMULA_TRACEABILITY_TABLE.md)** | Optional code ↔ formula traceability (audit / PDF-oriented). |
 | **[docs/COMPUTATIONAL_METRICS_CODE_REVIEW_REPORT.md](docs/COMPUTATIONAL_METRICS_CODE_REVIEW_REPORT.md)** | Project-owned computational code inventory for formalisation / peer review (not a user guide). |
@@ -86,7 +86,9 @@ Older Markdown snapshots (integrated vs Tk `v2_16` notes, external **`split_audi
 python -m pytest tests -v
 ```
 
-**Formula-validation (Passes 1–15):** executable checks under **`tests/formula_validation/`** implement the per-pass validation plans against selected numerical fixtures. As recorded in **`VALIDATION_STATUS_812_PASSED_PASSES_1_15.md`**, the formula-validation suite reports **149 passed**, **0 failed**, and the full repository suite **812 passed**, **39 skipped**, **0 failed** for that recorded run. The formula-validation corpus supports **internal consistency** between the documented formulas and the tested Python implementations; it verifies formula/code agreement for those fixtures and **does not**, by itself, prove scientific optimality, universal correctness, or full acoustic validity of the models. See **`METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`** for scope and limitations.
+**Formula-validation (Passes 1–15):** executable checks under **`tests/formula_validation/`** implement the per-pass validation plans against selected numerical fixtures. The formula-validation corpus supports **internal consistency** between the documented formulas and the tested Python implementations; it verifies formula/code agreement for those fixtures and **does not**, by itself, prove scientific optimality, universal correctness, or full acoustic validity of the models. See **`docs/validation/METHODOLOGICAL_NOTE_FORMULA_VALIDATION.md`** for scope and limitations.
+
+See `docs/FINAL_ACCEPTANCE_REPORT.md` and `docs/KNOWN_BASELINE_TEST_FAILURES.md` for the current test status.
 
 ```bash
 python -m pytest tests/formula_validation/ -q
