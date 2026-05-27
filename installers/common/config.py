@@ -10,6 +10,15 @@ APP_NAME = "SoundSpectrAnalyse"
 PYTHON_VERSION = "3.11.9"
 PBS_TAG = "20240415"
 
+# Pinned versions and hashes for hardcoded external artefacts.
+# PBS tarball hashes are NOT pinned here — they are fetched at install time
+# from the per-artefact .sha256 files co-located with each upstream release
+# asset. See bootstrap._fetch_pbs_sha256.
+GET_PIP_PY_URL = "https://bootstrap.pypa.io/pip/get-pip.py"
+GET_PIP_PY_SHA256 = "66904bccb878e363db6236ea900e6935e507dcb887e9f178f6212edfe7f46a76"
+GET_PIP_PY_PINNED_AT = "2026-05-27"
+WIN_EMBED_ZIP_SHA256 = "009d6bf7e3b2ddca3d784fa09f90fe54336d5b60f0e0f305c37f400bf83cfd3b"
+
 INSTALLERS_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = INSTALLERS_DIR.parent
 RUNTIME_DIR = INSTALLERS_DIR / "runtime"

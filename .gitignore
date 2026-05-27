@@ -1,0 +1,29 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build artefacts
+*.egg-info/
+build/
+dist/
+
+# Pytest and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Installer runtime (mirror of installers/.gitignore for safety)
+installers/runtime/
