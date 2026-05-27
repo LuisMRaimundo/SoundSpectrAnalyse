@@ -395,8 +395,7 @@ class SpectralDensityMetrics:
         associated with Krimphoff et al. (1994) and Peeters et al. (2011),
         which the previous naming could suggest.
 
-        See: docs/CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md
-        ("Naming caveat: effective_partial_density vs. classical density").
+        See: docs/METRIC_FORMULA_INDEX.md (F-012, effective partial density).
         """
         if amplitudes is None or amplitudes.size == 0:
             return 0.0

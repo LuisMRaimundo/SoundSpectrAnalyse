@@ -2,7 +2,7 @@
 
 ## 0. Scope and epistemic status
 
-This manual documents the current implementation in `SoundSpectrAnalys_version 55` as code exists today.
+This manual documents the current implementation in `SoundSpectrAnalyse` as code exists today.
 
 - The software analyses individual note recordings.
 - It is not restricted to clarinet.

@@ -1152,7 +1152,7 @@ def _build_compile_guide_dataframe(meta_flat: Dict[str, Any], density_columns: L
         "compiled_density_metrics_research.xlsx",
         "Read-only post-process (tools/export_research_density_workbook.py). Adds "
         "density_weighted_sum_cdm_mean = (density_weighted_sum + Combined Density Metric) / 2 and column "
-        "highlights on Spectral_Density_Metrics. Editorial only — see docs/DENSITY_EXPORT_SCHEMA.md section R.",
+        "highlights on Spectral_Density_Metrics. Editorial only — see docs/EXPORT_COLUMN_DICTIONARY.md.",
     )
     row(
         "Excel / charts",

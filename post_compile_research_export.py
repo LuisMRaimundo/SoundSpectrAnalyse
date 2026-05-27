@@ -4,7 +4,7 @@ Post–Stage-2 hook: build ``compiled_density_metrics_research.xlsx`` beside the
 
 Safe to call after a successful compile; failures are logged and do not affect analysis status.
 The research workbook is written without formal Excel **Table** parts (worksheet AutoFilter
-only on data sheets); see ``docs/CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md`` §9.
+only on data sheets); see ``docs/EXPORT_COLUMN_DICTIONARY.md`` (research workbook section).
 """
 
 from __future__ import annotations

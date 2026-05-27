@@ -19,7 +19,7 @@ blank headers; duplicate names receive ``_2``, ``_3``, …).
 workbook; adds ``density_weighted_sum_cdm_mean`` =
 (``density_weighted_sum`` + ``Combined Density Metric``) / 2; applies soft column
 highlights on those three columns (research file only). Normative semantics:
-``docs/DENSITY_EXPORT_SCHEMA.md`` §R.
+``docs/EXPORT_COLUMN_DICTIONARY.md``.
 """
 
 from __future__ import annotations

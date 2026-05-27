@@ -30,7 +30,7 @@ The software is developed and tested on Python >=3.10,<3.12. Installation from a
 
 ```bash
 git clone <repository-url>
-cd "SoundSpectrAnalys_version 55"
+cd "SoundSpectrAnalyse"
 pip install -r requirements.txt
 ```
 

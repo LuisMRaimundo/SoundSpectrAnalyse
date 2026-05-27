@@ -4,7 +4,7 @@ title: "SoundSpectrAnalyse"
 version: "3.7.0"
 date-released: "2026-05-27"
 license: "LicenseRef-Proprietary"
-repository-code: ""
+repository-code: "https://github.com/LuisMRaimundo/SoundSpectrAnalyse"
 authors:
   - family-names: "Raimundo"
     given-names: "Luís"

@@ -728,17 +728,17 @@ class RobustOrchestratorApp:
         ttk.Button(
             lf_help,
             text="Quick Guide",
-            command=lambda: self._open_doc("docs/QUICK_GUIDE.md"),
+            command=lambda: self._open_doc("README.md"),
         ).pack(side=tk.LEFT, padx=6, pady=6)
         ttk.Button(
             lf_help,
             text="Technical Manual",
-            command=lambda: self._open_doc("docs/TECHNICAL_MANUAL.md"),
+            command=lambda: self._open_doc("docs/TECHNICAL_MANUAL_COMPLETE.md"),
         ).pack(side=tk.LEFT, padx=6, pady=6)
         ttk.Button(
             lf_help,
             text="Tutorial",
-            command=lambda: self._open_doc("docs/TUTORIAL.md"),
+            command=lambda: self._open_doc("docs/GUI_OPTION_REFERENCE.md"),
         ).pack(side=tk.LEFT, padx=6, pady=6)
 
         frame_act = ttk.LabelFrame(tab_basic, text="Run")

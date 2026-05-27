@@ -1,6 +1,6 @@
 # References
 
-This file is the canonical bibliography for all theoretical anchors used in the SoundSpectrAnalys_version 55 codebase. Inline `References` blocks in individual modules use short form; full APA-7 entries live here. The dissertation that consumes this software should cite from this file.
+This file is the canonical bibliography for all theoretical anchors used in the SoundSpectrAnalyse codebase. Inline `References` blocks in individual modules use short form; full APA-7 entries live here. The dissertation that consumes this software should cite from this file.
 
 ## Spectral analysis and DFT/window theory
 - Harris, F. J. (1978). On the use of windows for harmonic analysis with the discrete Fourier transform. *Proceedings of the IEEE, 66*(1), 51–83.
