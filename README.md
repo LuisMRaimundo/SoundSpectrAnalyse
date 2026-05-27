@@ -115,15 +115,15 @@ For permission requests, contact: lmr.2020@outlook.pt
 
 Citation metadata is provided in `CITATION.cff`.
 
-This work was funded by the Fundação para a Ciência e a Tecnologia (FCT) under grant [2020.08817.BD](https://doi.org/10.54499/2020.08817.BD).
+This work was funded by the Foundation for Science and Technology (FCT) under grant [2020.08817.BD](https://doi.org/10.54499/2020.08817.BD).
 
 ## Acknowledgements
 
-This project was developed by Luís Raimundo with the support and funding of the Fundação para a Ciência e a Tecnologia (FCT) and NOVA University of Lisbon, under doctoral grant [2020.08817.BD](https://doi.org/10.54499/2020.08817.BD).
+This project was developed by Luís Raimundo with the support and funding of the Foundation for Science and Technology (FCT) and NOVA University of Lisbon, under doctoral grant [2020.08817.BD](https://doi.org/10.54499/2020.08817.BD).
 
 The author extends sincere gratitude to:
 
 
-**Isabel Pires** for her academic and supervisory support throughout the development of this work.
+Isabel Pires for her academic and supervisory support throughout the development of this work.
 
-**João Lopes** for his extensive IT assistance and technical consultation throughout the project's development.
+João Lopes for his extensive IT assistance and technical consultation throughout the project's development.
