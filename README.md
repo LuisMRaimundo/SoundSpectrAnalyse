@@ -123,6 +123,6 @@ This project was developed by Luís Raimundo with the support and funding of the
 
 The author extends sincere gratitude to:
 
-**Isabel Pires** for her supervisory support throughout the development of this work.
+| Isabel Pires | for her academic and supervisory support throughout the development of this work.
 
-**João Lopes** for his tremendous IT support, technical advice, and continuous assistance.
+| João Lopes | for his extensive IT assistance and technical consultation throughout the project's development.
