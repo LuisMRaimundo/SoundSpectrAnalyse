@@ -121,4 +121,8 @@ This work was funded by the Fundação para a Ciência e a Tecnologia (FCT) unde
 
 This project was developed by Luís Raimundo with the support and funding of the Fundação para a Ciência e a Tecnologia (FCT) and NOVA University of Lisbon, under doctoral grant [2020.08817.BD](https://doi.org/10.54499/2020.08817.BD).
 
-The author gratefully acknowledges Isabel Pires for her supervisory support throughout the development of this work.
+The author extends sincere gratitude to:
+
+# Isabel Pires for her supervisory support throughout the development of this work.
+
+# João Lopes for his tremendous IT support, technical advice, and continuous assistance.
