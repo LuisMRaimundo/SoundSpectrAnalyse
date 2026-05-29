@@ -1641,22 +1641,26 @@ def _prepare_df_for_density_export(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 _NOTE_DENSITY_FINAL_SOURCE_LOGGED = False
 
-_NOTE_DENSITY_FINAL_SUM_DISPLAY_FALLBACK: Dict[str, str] = {
-    "harmonic": "Harmonic Partials sum",
-    "inharmonic": "Inharmonic Partials sum",
-    "subbass": "Sub-bass sum",
-}
-
-
 def _resolve_note_density_sum_column(df: pd.DataFrame, component: str) -> Optional[str]:
     """Resolve the per-band density-sum column for ``component``.
 
-    Priority (per task Step 1):
-      1. exact canonical ``{component}_density_sum``;
+    Priority:
+      1. exact canonical ``{component}_density_sum`` (the GUI-weighted band D,
+         e.g. ``log10(1 + sum A)`` under ``wf=log``);
       2. unique case-insensitive column containing both the component name
-         and ``density_sum``;
-      3. display-name fallback (``Harmonic Partials sum`` / …) used by the
-         wide compiled frame, which carries the same per-band D values.
+         and ``density_sum``.
+
+    NOTE — no display-name fallback. The legacy ``Harmonic Partials sum`` /
+    ``Inharmonic Partials sum`` / ``Sub-bass sum`` columns are NOT a safe source:
+    in the per-note ``Metrics`` sheet (and therefore in the harvested wide
+    compiled frame) they carry a RAW partial sum on a completely different
+    scale than the GUI-weighted band density ``*_density_sum`` (e.g. cello C2:
+    ``Harmonic Partials sum`` = 174178 raw vs ``harmonic_density_sum`` = 3.22
+    log). Resolving to that display column produced a ``note_density_final`` on
+    the wrong scale in the wide-frame-derived sheets (Diagnostic_Metrics) while
+    the canonical Density_Metrics sheet — which carries the true
+    ``*_density_sum`` columns — stayed correct. note_density_final is therefore
+    only computed where the canonical weighted band sums are present.
     """
     exact = f"{component}_density_sum"
     if exact in df.columns:
@@ -1669,9 +1673,6 @@ def _resolve_note_density_sum_column(df: pd.DataFrame, component: str) -> Option
     ]
     if len(ci) == 1:
         return ci[0]
-    fallback = _NOTE_DENSITY_FINAL_SUM_DISPLAY_FALLBACK.get(component)
-    if fallback is not None and fallback in df.columns:
-        return fallback
     return None
 
 
@@ -1799,9 +1800,16 @@ def _add_canonical_and_global_density_columns(
         subbass_weight=subbass_weight,
     )
     # Derived principled scalar density (energy-ratio-weighted band sums).
-    out["note_density_final"] = _compute_note_density_final(
-        out, context="wide_compiled_frame"
-    )
+    # Only emit it when the canonical GUI-weighted band sums (``*_density_sum``)
+    # are present. The harvested wide frame typically carries only the RAW
+    # ``Harmonic Partials sum`` (different scale), so computing here would be on
+    # the wrong scale; in that case note_density_final is left to the canonical
+    # Density_Metrics sheet (and the research workbook), which hold the true
+    # weighted band sums. This prevents the wide-frame-derived sheets
+    # (Diagnostic_Metrics) from showing a note_density_final on a raw scale.
+    _ndf_wide = _compute_note_density_final(out, context="wide_compiled_frame")
+    if _ndf_wide.notna().any():
+        out["note_density_final"] = _ndf_wide
     return out
 
 
