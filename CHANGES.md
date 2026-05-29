@@ -1,3 +1,42 @@
+# note_density_final scale-consistency fix (2026-05-29)
+
+Fixes a cross-sheet scale inconsistency in `note_density_final` surfaced on the
+cello run, plus log-noise polish:
+
+- **note_density_final no longer uses the raw display-sum fallback
+  (`compile_metrics._resolve_note_density_sum_column`).** The resolver had a
+  third-priority fallback to the legacy display columns `Harmonic Partials sum`
+  / `Inharmonic Partials sum` / `Sub-bass sum`. In the per-note `Metrics` sheet
+  (and therefore in the harvested wide compiled frame) those columns carry a RAW
+  partial sum on a different scale than the GUI-weighted band density
+  `*_density_sum` (cello C2: `Harmonic Partials sum` = 174178 raw vs
+  `harmonic_density_sum` = 3.22 log). The fallback produced a wrong-scale
+  `note_density_final` (173624) in the wide-frame-derived `Diagnostic_Metrics`
+  sheet, while the canonical `Density_Metrics` sheet and the research workbook —
+  which carry the true `*_density_sum` columns — stayed correct (3.22). The
+  fallback is removed: `note_density_final` is now computed **only** from the
+  canonical weighted band sums, so it is correct wherever present and simply
+  absent from the diagnostic sheet (which lacks those columns) rather than wrong.
+  Verified end-to-end: `Density_Metrics` and research `note_density_final` =
+  3.2199, 26/26 non-NaN; `Diagnostic_Metrics` no longer carries the column.
+- **Wide-frame skip logged as INFO, not WARNING.** When the wide compiled frame
+  cannot compute `note_density_final` (no canonical `*_density_sum` columns —
+  the expected, correct outcome), the message is now an INFO noting it is
+  computed authoritatively in `Density_Metrics`; a WARNING is kept only for any
+  other (unexpected) context.
+
+Known, deferred (documented for transparency): the wide-frame / `Diagnostic_Metrics`
+density family (`density_metric_raw`, `weighted_*_density_contribution`) is still
+computed from the raw `Harmonic Partials sum` and therefore reported on a raw
+scale in that diagnostic sheet, inconsistent with the canonical `Density_Metrics`
+values. Publication outputs (`Density_Metrics`, research `Spectral_Density_Metrics`)
+are unaffected. A full reconciliation of the per-note `Metrics` `Partials sum`
+semantics with the canonical weighted band sums is planned as a dedicated phase.
+
+Full suite: 112 passed, 2 skipped.
+
+---
+
 # Adaptive observation energy-anchoring + CFAR log fix (2026-05-29)
 
 Fixes a real defect surfaced by a cello (IOWA arco mf, C string) run and a
