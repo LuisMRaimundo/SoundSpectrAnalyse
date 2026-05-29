@@ -1719,12 +1719,27 @@ def _compute_note_density_final(df: pd.DataFrame, *, context: str = "") -> pd.Se
     if any(v is None for v in sum_cols.values()) or any(
         v is None for v in ratio_cols.values()
     ):
-        logger.warning(
-            "note_density_final: could not resolve all source columns "
-            "(sums=%s ratios=%s); emitting NaN.",
-            sum_cols,
-            ratio_cols,
-        )
+        # The wide compiled frame intentionally lacks the GUI-weighted
+        # ``*_density_sum`` columns (it only carries the raw display sums), so it
+        # cannot — and must not — compute note_density_final there. This is the
+        # expected, correct outcome; note_density_final is authoritatively
+        # produced by the Density_Metrics builder (and the research workbook),
+        # which carry the true weighted band sums. Log it as INFO for that
+        # context so it does not look like an error; keep WARNING elsewhere.
+        if context == "wide_compiled_frame":
+            logger.info(
+                "note_density_final not computed on the wide compiled frame "
+                "(no canonical *_density_sum columns; computed authoritatively "
+                "in Density_Metrics). sums=%s",
+                sum_cols,
+            )
+        else:
+            logger.warning(
+                "note_density_final: could not resolve all source columns "
+                "(sums=%s ratios=%s); emitting NaN.",
+                sum_cols,
+                ratio_cols,
+            )
         return pd.Series(np.nan, index=df.index)
 
     total = pd.Series(0.0, index=df.index, dtype="float64")
