@@ -1,3 +1,36 @@
+# Adaptive observation energy-anchoring + CFAR log fix (2026-05-29)
+
+Fixes a real defect surfaced by a cello (IOWA arco mf, C string) run and a
+stale log string:
+
+- **Energy-anchored adaptive observation (`obs_w_formula_version`
+  `v56_occupancy_ratio` → `v57_energy_anchored_occupancy`).** The per-note
+  adaptive observation that feeds `AdaptiveDensityEngine` (and hence
+  `density_metric_raw` / the Phase-2 profile) was computed purely from
+  structural *occupancy + density-per-slot*, each normalised by the band's
+  expected slot count. Because bands have wildly different expected counts
+  (harmonic ~ hundreds of orders; sub-bass ~ a handful of bins), at permissive
+  salience thresholds a spectrally narrow, energetically negligible band could
+  saturate its occupancy on the noise floor and dominate the learned profile.
+  Observed: cello **C2 sub-bass carried 3.6e-5 of the spectral energy yet drew
+  `pure_observation_w_s = 0.52`**, and the wide inharmonic band out-weighted the
+  99.7%-energy harmonic band. Fix (`acoustic_density_core.py`): each band's
+  structural strength is now weighted by its **measured energy share**
+  (`component_strength_energy_gate_{h,i,s}`, exported for audit), so a band with
+  ~0 energy contributes ~0 to the observation while richness still modulates the
+  weight among energetically-present bands. This makes the adaptive observation
+  physically coherent with the measured component energy ratios that
+  `note_density_final` already uses. New regression:
+  `tests/phase_6/test_subbass_observation_cap.py::test_energy_anchoring_suppresses_noise_floor_subbass_band`.
+- **CFAR log string corrected (`proc_audio.py`).** The per-note harmonic summary
+  no longer announces the obsolete "SNR ≥ 3 dB" criterion; it now states the
+  active gate: "(CFAR detection [Pfa-based] + saddle prominence ≥ 3 dB)".
+
+Note: `note_density_final` (energy-ratio based) is unaffected by the first fix —
+it never used the adaptive weights. Full suite: 112 passed, 2 skipped.
+
+---
+
 # Methodological closure: CFAR acceptance, primary-by-default, full UQ (2026-05-29)
 
 Closing the final three methodological inconsistencies flagged in the doctoral

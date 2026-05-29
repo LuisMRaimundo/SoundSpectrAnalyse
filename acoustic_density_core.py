@@ -96,7 +96,7 @@ pure per-sample evidence and apply Bayesian / stochastic updates downstream
 DEPRECATED_LEGACY_OBSERVATION_BLEND_WEIGHT = 0.55
 DEPRECATED_LEGACY_PRIOR_BLEND_WEIGHT = 0.45
 
-OBS_W_FORMULA_VERSION_CURRENT: Final[str] = "v56_occupancy_ratio"
+OBS_W_FORMULA_VERSION_CURRENT: Final[str] = "v57_energy_anchored_occupancy"
 """
 obs_w formula semantic tag used in exported descriptors.
 
@@ -1017,6 +1017,43 @@ def compute_acoustic_density_descriptors(
                 s_density_per_particle
                 + float(STRENGTH_OCCUPANCY_WEIGHT_SUBBASS) * s_occupancy
             )
+
+        # === ENERGY-CONSISTENCY GATE (obs formula v57) =====================
+        # The structural strength above (occupancy + density-per-slot) is
+        # normalised by each band's EXPECTED slot count, and those counts differ
+        # by orders of magnitude across bands (harmonic ~ hundreds of orders;
+        # sub-bass ~ a handful of bins). At a permissive salience threshold a
+        # spectrally narrow, energetically negligible band can therefore
+        # saturate its occupancy on the noise floor and dominate the learned
+        # density profile. Observed defect: cello C2 sub-bass carried 3.6e-5 of
+        # the spectral energy yet drew w_s=0.52, and the wide inharmonic band
+        # out-weighted the (99.7%-energy) harmonic band.
+        #
+        # Fix: weight each band's structural strength by its MEASURED energy
+        # presence (band energy share). A band with ~0 energy then contributes
+        # ~0 to the adaptive observation, while structural richness still
+        # modulates the weight AMONG bands that genuinely carry energy. This
+        # makes the adaptive observation physically coherent with the measured
+        # component energy ratios (which note_density_final already uses).
+        _e_h = max(0.0, float(body_harmonic_energy))
+        _e_i = max(0.0, float(body_inharmonic_energy))
+        _e_s = max(0.0, float(body_subbass_energy))
+        _e_total = _e_h + _e_i + _e_s
+        if _e_total > EPS:
+            _gate_h, _gate_i, _gate_s = (
+                _e_h / _e_total,
+                _e_i / _e_total,
+                _e_s / _e_total,
+            )
+        else:
+            # No measurable energy in any band: fall back to ungated structure.
+            _gate_h = _gate_i = _gate_s = 1.0
+        out["component_strength_energy_gate_h"] = float(_gate_h)
+        out["component_strength_energy_gate_i"] = float(_gate_i)
+        out["component_strength_energy_gate_s"] = float(_gate_s)
+        h_term = float(h_term) * _gate_h
+        i_term = float(i_term) * _gate_i
+        s_term = float(s_term) * _gate_s
 
         component_strength = np.array([h_term, i_term, s_term], dtype=float)
         out["component_strength_h"] = float(component_strength[0])

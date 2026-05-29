@@ -4225,7 +4225,8 @@ class AudioProcessor:
         self.harmonic_candidate_count_density = density_included_n
         self.logger.info(
             "%d density-validated harmonic components on f0-aligned comb "
-            "(SNR ≥ 3 dB + saddle prominence ≥ 3 dB) out of %d expected orders.",
+            "(CFAR detection [Pfa-based] + saddle prominence ≥ 3 dB) out of "
+            "%d expected orders.",
             int(density_included_n),
             int(candidate_n),
         )
