@@ -60,7 +60,7 @@ def _write_note_workbook(
     )
     metrics = pd.DataFrame(
         {
-            "obs_w_formula_version": ["v57_energy_anchored_occupancy"],
+            "obs_w_formula_version": ["v58_full_spectrum_region_energy_gate"],
             "pure_observation_w_h": [obs_h],
             "pure_observation_w_i": [obs_i],
             "pure_observation_w_s": [obs_s],
@@ -109,4 +109,4 @@ def test_phase7_fields_exposed_in_compiled_density_and_diagnostic(tmp_path: Path
         assert col in diagnostic_df.columns
 
     assert "obs_w_formula_version" in density_df.columns
-    assert density_df["obs_w_formula_version"].astype(str).eq("v57_energy_anchored_occupancy").all()
+    assert density_df["obs_w_formula_version"].astype(str).eq("v58_full_spectrum_region_energy_gate").all()

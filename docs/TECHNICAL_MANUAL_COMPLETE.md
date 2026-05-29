@@ -498,6 +498,26 @@ $$
 
 Export: `pure_observation_w_h`, `pure_observation_w_i`, `pure_observation_w_s`.
 
+**Energy-consistency gate (`obs_w_formula_version = v58_full_spectrum_region_energy_gate`).**
+Each structural strength is weighted by its band's energy presence before
+forming the triplet: $s_x \leftarrow s_x \cdot g_x$, where the gate
+$g_x = E_x / (E_H+E_I+E_S)$ uses the **full-spectrum, total-power-normalised
+region energy triple** — harmonic-peak $E_H$, **non-harmonic residual** $E_I$,
+sub-bass $E_S$ (`harmonic_energy_ratio` / `residual_energy_ratio` /
+`subbass_energy_ratio`). These three powers partition every spectral bin, so the
+gate conserves energy and is instrument-agnostic. A band with ~0 energy
+contributes ~0 (this is what suppresses the empty sub-bass band). Audit:
+`component_strength_energy_gate_{harmonic,non_harmonic_residual,subbass}`,
+`density_band_energy_basis`.
+
+**Terminology.** The middle (non-harmonic) band is the inter-harmonic RESIDUAL
+(broadband bow/breath/attack noise plus any non-`n·f0` content). It is *not* the
+same as partial INHARMONICITY (piano/bell stretch), which is reported separately
+as the inharmonicity coefficient $B$ and the inharmonic-peak energy, and is *not*
+part of this density gate. v57 (`v57_energy_anchored_occupancy`) used
+body-ceiling-truncated energies and is superseded because that truncation made
+the non-harmonic share instrument-dependent.
+
 ### 8.2 Adaptive engine
 
 **Code location.**

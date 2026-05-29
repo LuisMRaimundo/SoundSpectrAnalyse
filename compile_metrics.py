@@ -6536,6 +6536,67 @@ def _write_compiled_excel(
         logger.warning("Removing dissonance-like columns from Density_Metrics: %s", _strip)
         density_df = density_df.drop(columns=_strip, errors="ignore")
 
+    # === SINGLE SOURCE OF TRUTH — wide-frame ↔ canonical density reconciliation ==
+    # base_df's density family is computed by _compute_weighted_density_columns_for_wide_df
+    # from the per-note ``Harmonic Partials sum`` harvested from the Metrics sheet, which is
+    # a RAW partial sum on a DIFFERENT scale than the GUI-weighted band density that the
+    # Density_Metrics builder (density_df) computes by re-reading each per-note spectrum.
+    # That made density_metric_raw / weighted_*_density_contribution / *_density_sum /
+    # the per-band ``* Partials sum`` diverge between the canonical Density_Metrics sheet
+    # (correct, log-weighted) and the wide-frame-derived sheets (Diagnostic_Metrics,
+    # Compiled_Metrics_All). Reconcile by overwriting base_df's density family with the
+    # authoritative density_df values, keyed by Note, so every sheet reports the same
+    # single source of truth. density_df is re-extracted from the per-note workbooks and
+    # is independent of base_df's (raw) density columns, so this is not circular.
+    _CANONICAL_DENSITY_COLS_TO_PROPAGATE = (
+        "Harmonic Partials sum",
+        "Inharmonic Partials sum",
+        "Sub-bass sum",
+        "Total sum",
+        "harmonic_density_sum",
+        "inharmonic_density_sum",
+        "subbass_density_sum",
+        "weighted_harmonic_density_contribution",
+        "weighted_inharmonic_density_contribution",
+        "weighted_subbass_density_contribution",
+        "density_metric_raw",
+        "density_metric_normalized",
+        "density_metric_raw_per_note_balance",
+        "density_weighted_sum",
+    )
+    if (
+        not base_df.empty
+        and density_df is not None
+        and not density_df.empty
+        and "Note" in base_df.columns
+        and "Note" in density_df.columns
+    ):
+        _take = [c for c in _CANONICAL_DENSITY_COLS_TO_PROPAGATE if c in density_df.columns]
+        if _take:
+            _auth = density_df[["Note"] + _take].groupby("Note", as_index=False).last()
+            base_df = base_df.merge(_auth, on="Note", how="left", suffixes=("", "__canon"))
+            _reconciled = []
+            for _c in _take:
+                _ck = f"{_c}__canon"
+                if _ck not in base_df.columns:
+                    # Column only exists in density_df → adopt it directly.
+                    continue
+                if _c in base_df.columns:
+                    # Prefer the authoritative canonical value where present.
+                    base_df[_c] = base_df[_ck].where(base_df[_ck].notna(), base_df[_c])
+                    _reconciled.append(_c)
+                else:
+                    base_df[_c] = base_df[_ck]
+                    _reconciled.append(_c)
+                base_df = base_df.drop(columns=[_ck], errors="ignore")
+            if _reconciled:
+                logger.info(
+                    "Density single-source-of-truth: reconciled %d wide-frame density "
+                    "column(s) with canonical Density_Metrics values (%s).",
+                    len(_reconciled),
+                    ", ".join(_reconciled),
+                )
+
     meta_flat = _enrich_compiled_metadata_from_df(metadata, base_df)
     # Phase 1 (cross-profile comparability guard): refuse to let mixed analysis
     # profiles be compared silently. Surface a corpus-level verdict and warn.

@@ -96,7 +96,7 @@ pure per-sample evidence and apply Bayesian / stochastic updates downstream
 DEPRECATED_LEGACY_OBSERVATION_BLEND_WEIGHT = 0.55
 DEPRECATED_LEGACY_PRIOR_BLEND_WEIGHT = 0.45
 
-OBS_W_FORMULA_VERSION_CURRENT: Final[str] = "v57_energy_anchored_occupancy"
+OBS_W_FORMULA_VERSION_CURRENT: Final[str] = "v58_full_spectrum_region_energy_gate"
 """
 obs_w formula semantic tag used in exported descriptors.
 
@@ -107,6 +107,15 @@ Allowed values:
   incommensurate strength formulation.
 - ``v56_occupancy_ratio``: pure data ratio from the Phase-7 register-invariant
   occupancy-ratio strength formulation.
+- ``v57_energy_anchored_occupancy``: occupancy strength gated by BODY-ceiling
+  band energy share (superseded — body truncation made the non-harmonic energy
+  share instrument-dependent).
+- ``v58_full_spectrum_region_energy_gate``: occupancy strength gated by the
+  FULL-SPECTRUM, total-power-normalised region energy triple
+  (harmonic-peak / non-harmonic-residual / sub-bass). Energy-conserving and
+  instrument-agnostic. The non-harmonic band is the inter-harmonic RESIDUAL
+  (broadband noise + non-n*f0 content); partial inharmonicity (B, inharmonic
+  peaks) is reported separately and is not part of this density gate.
 """
 
 
@@ -1018,7 +1027,7 @@ def compute_acoustic_density_descriptors(
                 + float(STRENGTH_OCCUPANCY_WEIGHT_SUBBASS) * s_occupancy
             )
 
-        # === ENERGY-CONSISTENCY GATE (obs formula v57) =====================
+        # === ENERGY-CONSISTENCY GATE (obs formula v58: full-spectrum region) ==
         # The structural strength above (occupancy + density-per-slot) is
         # normalised by each band's EXPECTED slot count, and those counts differ
         # by orders of magnitude across bands (harmonic ~ hundreds of orders;
@@ -1026,18 +1035,36 @@ def compute_acoustic_density_descriptors(
         # spectrally narrow, energetically negligible band can therefore
         # saturate its occupancy on the noise floor and dominate the learned
         # density profile. Observed defect: cello C2 sub-bass carried 3.6e-5 of
-        # the spectral energy yet drew w_s=0.52, and the wide inharmonic band
+        # the spectral energy yet drew w_s=0.52, and the wide non-harmonic band
         # out-weighted the (99.7%-energy) harmonic band.
         #
         # Fix: weight each band's structural strength by its MEASURED energy
         # presence (band energy share). A band with ~0 energy then contributes
         # ~0 to the adaptive observation, while structural richness still
-        # modulates the weight AMONG bands that genuinely carry energy. This
-        # makes the adaptive observation physically coherent with the measured
-        # component energy ratios (which note_density_final already uses).
-        _e_h = max(0.0, float(body_harmonic_energy))
-        _e_i = max(0.0, float(body_inharmonic_energy))
-        _e_s = max(0.0, float(body_subbass_energy))
+        # modulates the weight AMONG bands that genuinely carry energy.
+        #
+        # v57 -> v58: the gate previously used BODY-ceiling-truncated band
+        # energies. That made the non-harmonic band's energy share arbitrary and
+        # INSTRUMENT-DEPENDENT: for bright/noisy tones (bowed strings, winds,
+        # cymbals) most broadband/residual energy lies ABOVE the body ceiling, so
+        # the truncated gate under-counted it and silently collapsed toward a
+        # peak-only basis; for dark tones it did not. v58 uses the FULL-SPECTRUM,
+        # total-power-normalised region triple — harmonic-peak / NON-HARMONIC
+        # RESIDUAL / sub-bass — whose three energies partition every spectral bin
+        # and therefore sum to the total measured power (energy-conserving) and
+        # are instrument-agnostic.
+        #
+        # TERMINOLOGY: the middle band is the NON-HARMONIC / inter-harmonic
+        # RESIDUAL (broadband bow/breath/attack noise plus any non-n*f0 tonal
+        # content). It is NOT the same as partial INHARMONICITY (piano/bell
+        # stretch), which is a separate physics descriptor — the inharmonicity
+        # coefficient B and the inharmonic-PEAK energy — and must not be conflated
+        # with this density gate. ``h_energy``/``r_energy``/``s_energy`` are the
+        # full-spectrum region powers behind ``harmonic_energy_ratio`` /
+        # ``residual_energy_ratio`` / ``subbass_energy_ratio``.
+        _e_h = max(0.0, float(h_energy))
+        _e_i = max(0.0, float(r_energy))
+        _e_s = max(0.0, float(s_energy))
         _e_total = _e_h + _e_i + _e_s
         if _e_total > EPS:
             _gate_h, _gate_i, _gate_s = (
@@ -1051,6 +1078,12 @@ def compute_acoustic_density_descriptors(
         out["component_strength_energy_gate_h"] = float(_gate_h)
         out["component_strength_energy_gate_i"] = float(_gate_i)
         out["component_strength_energy_gate_s"] = float(_gate_s)
+        # Clearer, terminology-correct aliases (density basis = non-harmonic
+        # residual region; back-compat names retained above).
+        out["component_strength_energy_gate_harmonic"] = float(_gate_h)
+        out["component_strength_energy_gate_non_harmonic_residual"] = float(_gate_i)
+        out["component_strength_energy_gate_subbass"] = float(_gate_s)
+        out["density_band_energy_basis"] = "full_spectrum_region_total_power_v58"
         h_term = float(h_term) * _gate_h
         i_term = float(i_term) * _gate_i
         s_term = float(s_term) * _gate_s

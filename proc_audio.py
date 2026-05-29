@@ -379,7 +379,11 @@ COMPONENT_AMPLITUDE_MASS_PIE_TITLE_PREFIX = "Candidate amplitude balance"
 COMPONENT_AMPLITUDE_MASS_PIE_BASIS_FOOTNOTE = (
     "Basis: linear amplitude sums; not power/energy ratios."
 )
-COMPONENT_ENERGY_RATIO_PIE_BASIS_FOOTNOTE = "Basis: power/energy ratios."
+COMPONENT_ENERGY_RATIO_PIE_BASIS_FOOTNOTE = (
+    "Basis: component (peak) power/energy — harmonic vs inharmonic-peak vs sub-bass. "
+    "This is the partial-physics view; it is NOT the density basis, which uses the "
+    "full-spectrum non-harmonic RESIDUAL region (broadband + non-n*f0 content)."
+)
 _COMPONENT_AMPLITUDE_MASS_PIE_LEGEND_LABELS: Tuple[str, str, str] = (
     "Harmonic candidate amplitude mass",
     "Nonharmonic candidate amplitude mass",
@@ -1079,10 +1083,33 @@ def _estimate_f0_global_robust(
             'n_harmonics_used': len(detected_freqs)
         }
     
-    # Atribuir cada frequência a um n provável
-    n_assignments = np.round(detected_freqs / initial_f0).astype(int)
-    n_assignments = np.clip(n_assignments, 1, max_n)
-    
+    # Atribuir cada frequência a um n provável.
+    #
+    # BUGFIX (cello low-string f0 rejection): the order was previously CLIPPED
+    # to ``max_n`` (``np.clip(..., 1, max_n)``). With a long harmonic comb
+    # (cello C2 carries ~100+ strict peaks spanning orders 1..300) every peak
+    # above order ``max_n`` was relabelled as order ``max_n``, so a partial at,
+    # say, 6500 Hz contributed 6500/15 ≈ 433 Hz to the f0 estimate. The
+    # weighted least-squares f0 was driven far above the true value (C2:
+    # 65 Hz -> 114 Hz, |df0| ≈ 48 Hz), tripping the acceptance gate on almost
+    # every low note and suppressing the downstream inharmonicity (B) fit.
+    #
+    # Correct behaviour: the f0 fit must use only the LOW-ORDER partials it can
+    # reliably label (low orders are also the least inharmonic, so they suit the
+    # pure ``f = n·f0`` model best). We therefore FILTER to peaks whose rounded
+    # order is in ``[1, max_n]`` instead of clipping. A guarded fallback keeps
+    # the lowest available orders when too few low-order peaks survive.
+    n_assignments_all = np.round(detected_freqs / initial_f0).astype(int)
+    order_mask = (n_assignments_all >= 1) & (n_assignments_all <= max_n)
+    if int(np.count_nonzero(order_mask)) >= 2:
+        detected_freqs = detected_freqs[order_mask]
+        detected_amplitudes = detected_amplitudes[order_mask]
+        n_assignments = n_assignments_all[order_mask]
+    else:
+        # Degenerate case (e.g. initial_f0 badly off): keep the lowest-order
+        # peaks rather than corrupting the fit with clipped high-order labels.
+        n_assignments = np.clip(n_assignments_all, 1, max_n)
+
     # Pesos: normalizar amplitudes (harmónicos mais fortes têm mais peso)
     weights = detected_amplitudes / (np.max(detected_amplitudes) + 1e-10)
     weights = weights ** 2  # Ponderar por energia (A²)
@@ -8958,7 +8985,9 @@ class AudioProcessor:
                 self.energy_ratio_chart_status = "saved"
                 self.logger.info("Component energy-ratio pie saved: %s", en_path)
                 self.logger.info(
-                    "Basis: harmonic_energy_ratio / inharmonic_energy_ratio / subbass_energy_ratio.",
+                    "Basis: component (peak) energy — harmonic_energy_ratio / "
+                    "inharmonic_energy_ratio (peak) / subbass_energy_ratio. Partial-physics "
+                    "view; distinct from the density non-harmonic residual basis (v58 gate).",
                 )
         except Exception as exc:
             self.energy_ratio_chart_status = "error"

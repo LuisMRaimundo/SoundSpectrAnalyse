@@ -1,3 +1,82 @@
+# Density energy gate: full-spectrum region basis + non-harmonic terminology (2026-05-29)
+
+Resolves the "band-vs-peak" inconsistency between the inharmonic density weight
+(`wI`) and the reported inharmonic energy, generalised for ANY instrument.
+
+Root issue (terminology + basis): the code conflated two physically distinct
+things under "inharmonic" — (a) partial INHARMONICITY (discrete non-`n·f0`
+tonal peaks: piano stretch, bells; coefficient B) and (b) the inter-harmonic
+RESIDUAL (broadband bow/breath/attack noise + any non-`n·f0` content). The v57
+density gate also used BODY-ceiling-truncated band energies, which made the
+non-harmonic energy share arbitrary and instrument-dependent (bright/noisy tones
+carry most residual energy ABOVE the body ceiling, so the gate silently
+collapsed toward a peak-only basis).
+
+- **`acoustic_density_core.py` energy gate → v58
+  (`v58_full_spectrum_region_energy_gate`).** The gate now weights each band's
+  structural strength by the FULL-SPECTRUM, total-power-normalised region energy
+  triple (`harmonic_energy_ratio` / `residual_energy_ratio` /
+  `subbass_energy_ratio`). The three region powers partition every spectral bin,
+  so they conserve energy (sum to total power) and are instrument-agnostic:
+  discrete inharmonic peaks (piano/bell) and broadband noise (bowed/wind) both
+  land in the non-harmonic residual band and both correctly contribute to
+  perceived spectral density. New audit fields
+  `component_strength_energy_gate_{harmonic,non_harmonic_residual,subbass}` and
+  `density_band_energy_basis` are exported; the legacy
+  `component_strength_energy_gate_{h,i,s}` names are retained as aliases.
+- **Terminology corrected.** The density middle band is now documented as the
+  NON-HARMONIC / inter-harmonic RESIDUAL, not "inharmonic". Partial
+  inharmonicity (coefficient B + inharmonic-peak energy) is a SEPARATE physics
+  descriptor and is no longer conflated with the density gate. The component
+  energy-ratio pie is relabelled as the peak/physics view, explicitly distinct
+  from the density residual basis.
+- Test expectations and README/docs updated `v57 → v58`. Full suite green
+  (112 passed, 2 skipped), including the subbass-suppression regression and the
+  strength-formula-units contract.
+
+# Robust f0 global-fit order-clipping bugfix (2026-05-29)
+
+Fixes the high f0-rejection rate (and consequent suppression of the
+inharmonicity-B fit) on low-pitched, harmonic-rich tones (cello C2–C4).
+
+- **`_estimate_f0_global_robust` (proc_audio.py) now FILTERS partials to
+  rounded order `[1, max_n]` instead of CLIPPING the order to `max_n`.** The
+  weighted least-squares estimator `f0 = Σ(w·n·f)/Σ(w·n²)` was fed every
+  detected strict peak (cello C2 carries ~100+ peaks up to order ~300), but the
+  order label was clipped to `max_n=15`. Each high-order partial was therefore
+  relabelled as order 15, so e.g. a 6500 Hz partial contributed 6500/15 ≈ 433 Hz
+  to the f0 estimate, dragging it far above the truth (C2: 65 Hz → ~114 Hz,
+  |Δf0| ≈ 48 Hz). The acceptance gate (|Δf0| ≤ 2 % f0) then correctly rejected
+  the garbage fit on almost every low note (`f0_fit_accepted=False`), which also
+  starved the downstream inharmonicity (B) estimation. Low-order partials are
+  both reliably labelable and the least inharmonic, so they are the correct
+  basis for the pure `f = n·f0` model; the fix restricts the fit to them.
+  Verified on synthetic cello combs: C2/F2/A2 now estimate within |Δf0| < 0.5 Hz
+  (fit_quality ≈ 0.011 ≪ 0.10 gate) and are accepted. All 21 f0 / inharmonicity
+  / FFT-invariance / ground-truth regression tests pass.
+
+# density_metric_raw_per_note_balance reconciliation (2026-05-29)
+
+Closes the last cross-sheet scale residual found while auditing the cello run.
+`density_metric_raw_per_note_balance` (the per-note, energy-ratio-weighted
+comparator `r_H·D_H + r_I·D_I + r_S·D_S`) was computed on the canonical
+log-weighted band density in the `Density_Metrics` sheet (cello C2 = 3.22) but
+on the raw wide-frame band sums in the harvested `Diagnostic_Metrics` sheet
+(cello C2 = 173624). The single-source-of-truth reconciliation in
+`compile_metrics._write_compiled_excel` only propagated `density_metric_raw` /
+`density_metric_normalized`, leaving this column on the stale raw basis.
+
+- **`density_metric_raw_per_note_balance` added to
+  `_CANONICAL_DENSITY_COLS_TO_PROPAGATE`.** The reconciliation now overwrites the
+  wide frame with the canonical `Density_Metrics` value, so every derived sheet
+  reports the same log-weighted figure. Reconciled-column count goes 9 → 10.
+  Verified on the cello corpus: `Density_Metrics` and `Diagnostic_Metrics` now
+  both report `density_metric_raw_per_note_balance` = 3.2199 (matching the
+  `density_metric_raw` = 2.75 log basis); the raw 173624 leak is gone.
+  `tests/phase_2/test_phase2_profile_actually_applied.py` and
+  `tests/phase_6/test_density_metrics_excel_export_phase2_profile.py` still pass
+  (they read the authoritative `Density_Metrics` value, unchanged).
+
 # note_density_final scale-consistency fix (2026-05-29)
 
 Fixes a cross-sheet scale inconsistency in `note_density_final` surfaced on the

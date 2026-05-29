@@ -18,4 +18,4 @@ def test_obs_w_formula_version_is_tagged() -> None:
         f0_fit_accepted=True,
         density_summation_mode="his_note_adaptive",
     )
-    assert out.get("obs_w_formula_version") == "v57_energy_anchored_occupancy"
+    assert out.get("obs_w_formula_version") == "v58_full_spectrum_region_energy_gate"

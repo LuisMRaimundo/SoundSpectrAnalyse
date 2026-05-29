@@ -65,6 +65,6 @@ def test_phase1_csv_has_phase7_fields_populated(tmp_path: Path) -> None:
         assert col in hist.columns
     for col in PHASE71_FIELDS:
         if col == "obs_w_formula_version":
-            assert hist[col].astype(str).str.strip().eq("v57_energy_anchored_occupancy").all()
+            assert hist[col].astype(str).str.strip().eq("v58_full_spectrum_region_energy_gate").all()
         else:
             assert pd.to_numeric(hist[col], errors="coerce").notna().all()
