@@ -47,4 +47,4 @@ def test_per_note_metrics_writes_all_phase7_fields(tmp_path: Path) -> None:
         val = float(row[col])
         assert np.isfinite(val)
 
-    assert str(row["obs_w_formula_version"]).strip() == "v56_occupancy_ratio"
+    assert str(row["obs_w_formula_version"]).strip() == "v57_energy_anchored_occupancy"

@@ -34,4 +34,19 @@ def test_strength_terms_are_dimensionless_and_comparable() -> None:
     ]
     for t in terms:
         assert 0.0 <= t <= 2.1
-    assert max(terms) - min(terms) <= 0.6
+    # v57 (energy-anchored occupancy): each band's structural strength is
+    # weighted by its MEASURED energy share, so the three terms are NO LONGER
+    # required to be comparable in magnitude — the energy-dominant band must
+    # dominate. The energy gates must be a valid distribution.
+    gates = [
+        float(out["component_strength_energy_gate_h"]),
+        float(out["component_strength_energy_gate_i"]),
+        float(out["component_strength_energy_gate_s"]),
+    ]
+    assert all(0.0 <= g <= 1.0 for g in gates)
+    assert abs(sum(gates) - 1.0) < 1e-6
+    # Here every peak carries equal power, so the inharmonic band (72 peaks)
+    # holds the most energy and must receive the largest gate AND the largest
+    # gated structural strength.
+    assert gates[1] == max(gates)
+    assert terms[1] == max(terms)
