@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      # Report every supported version even if one fails.
+      fail-fast: false
+      matrix:
+        # Match the supported range declared in README / pyproject
+        # (Python >=3.10,<3.12). 3.9 is intentionally NOT tested.
+        python-version: ["3.10", "3.11"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install system audio libraries
+        # libsndfile backs soundfile/librosa I/O on the runner.
+        run: sudo apt-get update && sudo apt-get install -y libsndfile1
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run test suite
+        # testpaths/markers are configured in pyproject.toml
+        # ([tool.pytest.ini_options]); the slow end-to-end tests are skipped
+        # by default and can be run on demand (see TESTING.md).
+        run: pytest tests -q
