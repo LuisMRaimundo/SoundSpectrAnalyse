@@ -4729,7 +4729,6 @@ def _build_density_metrics_sheet_from_per_note_files(
             # harmonics carrying considerable energy => denser. Computed from the
             # validated harmonic peaks. Restores the historical "fatness" goal.
             **_energy_distribution_density(fpath),
-            "effective_partial_density": _f(info.get("effective_partial_density")),
             "normalized_harmonic_richness_body_ceiling": _f(
                 info.get("normalized_harmonic_richness_body_ceiling")
             ),
