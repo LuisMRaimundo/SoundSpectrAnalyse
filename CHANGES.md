@@ -34,6 +34,36 @@ collapsed toward a peak-only basis).
   (112 passed, 2 skipped), including the subbass-suppression regression and the
   strength-formula-units contract.
 
+# Energy-distribution density — timbral "fatness" restored (2026-05-30)
+
+Adds register-robust, energy-based density descriptors that separate timbres,
+addressing the finding that `note_density_final` (log-weighted, per-note
+normalised) behaves as a partial-COUNT measure dominated by register: across
+130 Orchidea notes it correlated r≈−0.96 with pitch and barely separated the
+three instruments at matched pitch (mean spread 0.11). The historical objective
+of the code — *more harmonics carrying considerable energy ⇒ denser* — is
+recovered as explicit first-class columns rather than by mutating the validated
+`note_density_final`.
+
+- **New compiled `Density_Metrics` columns** (computed in
+  `compile_metrics._energy_distribution_density` from the validated harmonic
+  peaks of each note's Harmonic Spectrum sheet, so no Stage-1 re-run is needed):
+  - `harmonic_effective_partial_count` — participation ratio
+    `(Σ Aₙ²)² / Σ Aₙ⁴` (effective number of partials carrying energy).
+  - `harmonic_energy_above_fundamental_ratio` — fraction of harmonic energy not
+    in the fundamental (0 = concentrated at f0; →1 = spread across partials).
+  - `harmonic_energy_centroid_order` — energy-weighted mean harmonic order
+    (brightness in harmonic-order units).
+  - `effective_partial_density` — full-spectrum participation ratio (surfaced).
+- **Validated on the cello/clarinet/trombone Orchidea corpora.** Pooled Neff
+  Trombone 5.04 > Cello 2.64 > Clarinet 1.80; energy-above-f0 0.82 / 0.54 / 0.31.
+  At matched pitch the new density separates the instruments ~16× more than
+  `note_density_final` (mean spread 1.69 vs 0.11 for Neff), with the
+  acoustically-correct ordering (brass spread > bowed string > closed-tube reed).
+- Note: `note_density_final` is intentionally unchanged (count/register density,
+  with its bootstrap CI / UQ contract intact); the new columns are the
+  complementary energy-distribution density.
+
 # Robust f0 global-fit order-clipping bugfix (2026-05-29)
 
 Fixes the high f0-rejection rate (and consequent suppression of the

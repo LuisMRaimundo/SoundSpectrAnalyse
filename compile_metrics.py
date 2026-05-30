@@ -4292,6 +4292,62 @@ def extract_density_components_from_per_note_workbook(
     return result
 
 
+def _energy_distribution_density(workbook_path: Union[str, Path]) -> Dict[str, float]:
+    """Energy-distribution ("fatness") density descriptors from a per-note workbook.
+
+    Computed from the validated harmonic peaks (Harmonic Spectrum sheet, linear
+    ``Amplitude`` per order, restricted to ``include_for_density`` when present).
+    These are register-robust and timbre-discriminating, complementing the
+    count/register-dominated ``note_density_final``:
+
+      * ``harmonic_effective_partial_count`` — participation ratio
+        ``(Σ Aₙ²)² / Σ Aₙ⁴`` (effective number of partials carrying energy;
+        1 ≈ a single dominant partial). Clarinet ≪ trombone/cello.
+      * ``harmonic_energy_above_fundamental_ratio`` — fraction of harmonic
+        energy NOT in the fundamental (0 = all energy at f0; →1 = spread).
+      * ``harmonic_energy_centroid_order`` — energy-weighted mean harmonic
+        order (spectral brightness in harmonic-order units; 1 = all at f0).
+
+    Returns NaNs on any failure so compile never breaks.
+    """
+    nan = float("nan")
+    fail = {
+        "harmonic_effective_partial_count": nan,
+        "harmonic_energy_above_fundamental_ratio": nan,
+        "harmonic_energy_centroid_order": nan,
+    }
+    try:
+        hs = pd.read_excel(workbook_path, sheet_name="Harmonic Spectrum")
+        if hs.empty or "Harmonic Number" not in hs.columns:
+            return fail
+        amp_col = "Amplitude" if "Amplitude" in hs.columns else (
+            "Amplitude_raw" if "Amplitude_raw" in hs.columns else None
+        )
+        if amp_col is None:
+            return fail
+        if "include_for_density" in hs.columns:
+            inc = hs["include_for_density"].astype(str).str.lower().isin(["true", "1", "1.0"])
+            if inc.any():
+                hs = hs[inc]
+        order = pd.to_numeric(hs["Harmonic Number"], errors="coerce").to_numpy(dtype=float)
+        amp = pd.to_numeric(hs[amp_col], errors="coerce").to_numpy(dtype=float)
+        ok = np.isfinite(order) & np.isfinite(amp) & (amp > 0.0) & (order >= 1.0)
+        order, amp = order[ok], amp[ok]
+        p = amp * amp
+        ptot = float(np.sum(p))
+        if order.size == 0 or ptot <= 0.0:
+            return fail
+        neff = float((ptot * ptot) / max(float(np.sum(p * p)), 1e-30))
+        fund = float(np.sum(p[order == 1.0]))
+        return {
+            "harmonic_effective_partial_count": neff,
+            "harmonic_energy_above_fundamental_ratio": float(np.clip((ptot - fund) / ptot, 0.0, 1.0)),
+            "harmonic_energy_centroid_order": float(np.sum(order * p) / ptot),
+        }
+    except Exception:
+        return fail
+
+
 def _note_density_final_bootstrap_ci(
     workbook_path: Union[str, Path],
     *,
@@ -4667,6 +4723,13 @@ def _build_density_metrics_sheet_from_per_note_files(
             "harmonic_effective_component_count_normalized_body_ceiling": _f(
                 info.get("harmonic_effective_component_count_normalized_body_ceiling")
             ),
+            # === ENERGY-DISTRIBUTION DENSITY (timbral "fatness") =============
+            # Register-robust, energy-based density that separates timbres
+            # (unlike the count/register-dominated note_density_final): more
+            # harmonics carrying considerable energy => denser. Computed from the
+            # validated harmonic peaks. Restores the historical "fatness" goal.
+            **_energy_distribution_density(fpath),
+            "effective_partial_density": _f(info.get("effective_partial_density")),
             "normalized_harmonic_richness_body_ceiling": _f(
                 info.get("normalized_harmonic_richness_body_ceiling")
             ),
