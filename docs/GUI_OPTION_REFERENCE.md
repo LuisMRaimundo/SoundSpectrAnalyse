@@ -55,6 +55,21 @@ Notes:
 | Anomaly contamination | `anomaly_contamination` | `auto` | `auto` or 0..1 | anomaly detector | expected anomaly fraction | Stage 2 diagnostic |
 | Manual inharmonic β override | `manual_model_weight_override`, `i_weight` | off / 5% | bool + 0..100 | model weight policy | overrides α/β model coefficients in legacy model-weight path | Stage 1 legacy-weighting context |
 
+## A4. Post-compile export (automatic Stage 3)
+
+Stage 3 runs automatically when **Auto-compile Stage 2** is enabled and compilation succeeds. There is no separate GUI toggle.
+
+| Behaviour | Module | Default | Effect | Scope |
+|---|---|---|---|---|
+| Research workbook export | `post_compile_research_export.run_research_workbook_export` | on (after Stage 2) | writes `compiled_density_metrics_research.xlsx` beside the compiled workbook | Stage 3 |
+| EWSD-R v18 merge | `tools.ewsd_research_integration.merge_ewsd_into_spectral_density_metrics` | on (`include_ewsd=True`) | recomputes EWSD from per-note `spectral_analysis.xlsx`; merges `EWSD_score_total`, `EWSD_score_acoustic_balanced`, provenance columns | research `Spectral_Density_Metrics` |
+| Thesis row gate | `ewsd_primary_analysis_eligible` | computed | filter final statistics to `True` rows only | research export |
+
+Notes:
+
+- EWSD requires per-note workbooks with `Harmonic Spectrum` and `Inharmonic Spectrum` sheets under the analysis folder.
+- Prefer `EWSD_score_acoustic_balanced` for cross-instrument bibliographic comparisons; keep `EWSD_score_total` as strict EWSD.
+
 ---
 
 ## B. PyQt GUI (`interface.py`) — reference/legacy surface (ARCHIVED)

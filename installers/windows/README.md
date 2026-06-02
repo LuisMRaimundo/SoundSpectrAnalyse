@@ -10,6 +10,8 @@
 4. Wait for first-time setup (**10-25 minutes** can be normal on slower networks).
 5. The SoundSpectrAnalyse GUI opens when setup finishes.
 
+After analysis with auto-compile enabled, each folder also contains `compiled_density_metrics.xlsx` and `compiled_density_metrics_research.xlsx` (Stage 3 EWSD scores in `Spectral_Density_Metrics`).
+
 ## Install log
 
 `installers\runtime\windows\install.log`

@@ -112,6 +112,22 @@ The status of each formula is one of:
   dense spectra do not inflate the local floor. Default `Pfa = 1e-2`, calibrated
   to preserve the validated acoustic chain.
 
+## F7 — Strict EWSD (Stage 3, EWSD-R v18)
+
+- **Canonical form**: `EWSD_score_total = sum_k r_k D_k (N_eff,k / N_k)` over H/I/S compartments.
+- **Module**: `tools/ewsd_core.py` (`compute_ewsd`); integration in `tools/ewsd_research_integration.py`.
+- **Reference**: participation-ratio anti-concentration; see `docs/TECHNICAL_MANUAL_COMPLETE.md` §7.8 and `docs/METRIC_FORMULA_INDEX.md` F-048.
+- **Test**: `tests/phase_11/test_research_export_includes_ewsd.py`.
+- **Status**: canonicalised_only (numerical regression; no symbolic AST test yet).
+
+## F8 — Acoustic-balanced EWSD companion (Stage 3)
+
+- **Canonical form**: `EWSD_score_acoustic_balanced = sum_k r_k D_k (N_eff,k / N_k)^alpha`, default `alpha = 0.5`.
+- **Module**: `tools/ewsd_core.py` (`add_acoustic_alignment_columns`).
+- **Reference**: see `docs/METRIC_FORMULA_INDEX.md` F-049.
+- **Test**: `tests/phase_11/test_research_export_includes_ewsd.py`.
+- **Status**: canonicalised_only.
+
 ## Coverage notes
 
 This suite is proportionate, not exhaustive. The six formulae covered are those that are either explicitly version-tagged or the subject of an explicit phase entry in `CHANGES.md`. Internal helper formulae are governed by the numerical regression tests under `tests/phase_*` rather than by symbolic-structure tests, since the cost of false positives from over-specified AST tests is greater than the benefit at that level of granularity.

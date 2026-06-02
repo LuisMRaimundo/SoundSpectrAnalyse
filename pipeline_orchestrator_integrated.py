@@ -4,7 +4,7 @@
 Pipeline orchestrator (integrated)
 ==================================
 
-Two-stage pipeline:
+Three-stage pipeline:
 
     Stage 1 - Per-note spectral analysis
         For each audio file, runs proc_audio.AudioProcessor.
@@ -19,6 +19,13 @@ Two-stage pipeline:
         Reads every per-note ``spectral_analysis.xlsx`` under
         ``main_analysis_output_dir`` and writes
         ``main_analysis_output_dir/compiled_density_metrics.xlsx``.
+
+    Stage 3 - Research export + EWSD
+        After Stage 2, ``post_compile_research_export`` builds
+        ``compiled_density_metrics_research.xlsx`` and merges EWSD-R v18
+        scores (``EWSD_score_total``, ``EWSD_score_acoustic_balanced``,
+        provenance columns, ``ewsd_primary_analysis_eligible``) into
+        ``Spectral_Density_Metrics`` when per-note workbooks are present.
 
 This module does not run any preprocessing, does not consult any external
 energy mapping, does not write any batch summary, and does not create a
@@ -124,10 +131,11 @@ def _configure_file_logging(log_path: Path) -> None:
 
 
 class RobustOrchestrator:
-    """Two-stage orchestrator: per-note analysis then compilation.
+    """Three-stage orchestrator: per-note analysis, compilation, research export.
 
     Component energy ratios come from the current spectral analysis only.
     There is no preprocessing stage and no external energy mapping.
+    Stage 3 recomputes EWSD-R v18 from per-note component spectra.
     """
 
     def __init__(
@@ -180,7 +188,7 @@ class RobustOrchestrator:
         self.compiled_excel_path: Optional[Path] = None
 
         logger.info(
-            "Orchestrator initialised with %d audio files (Stage 1 + Stage 2 pipeline).",
+            "Orchestrator initialised with %d audio files (Stage 1 + Stage 2 + Stage 3 pipeline).",
             len(self.audio_files),
         )
 
@@ -640,7 +648,7 @@ class RobustOrchestrator:
     # ------------------------------------------------------------------
     def run_complete_pipeline(self) -> Dict[str, Any]:
         logger.info("=" * 80)
-        logger.info("PIPELINE ORCHESTRATOR - COMPLETE PIPELINE (Stage 1 + Stage 2)")
+        logger.info("PIPELINE ORCHESTRATOR - COMPLETE PIPELINE (Stage 1 + Stage 2 + Stage 3)")
         logger.info("=" * 80)
         logger.info(f"Start time: {datetime.now()}")
 

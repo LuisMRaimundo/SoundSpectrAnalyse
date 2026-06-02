@@ -25,6 +25,18 @@ require a separate post-processing GUI step.
   `CANONICAL_PIPELINE_AND_EXPORT_SEMANTICS.md` §9, `METRIC_FORMULA_INDEX.md`,
   `pipeline.md`, `pipeline_runtime.md`.
 
+## Documentation sweep — orchestrator, contract, metadata (2026-06-02)
+
+Aligns remaining entry points and metadata with the three-stage pipeline:
+
+- **Orchestrator / entry points:** `run_orchestrator.py`, `pipeline_orchestrator_integrated.py`,
+  `pipeline_orchestrator_gui.py`, `main.py` — Stage 3 post-compile EWSD messaging.
+- **Contract:** `pipeline_contract.py` — Stage 3 constants, EWSD module paths,
+  contract version `SSA_CANONICAL_PIPELINE_2026_06_STAGE1_PROC_AUDIO_STAGE2_COMPILE_STAGE3_EWSD`.
+- **Metadata:** `metrics_dictionary.json` (EWSD columns), `docs/GUI_OPTION_REFERENCE.md` §A4,
+  `docs/parameter_provenance.md`, `docs/validation/FORMULA_VALIDATION_STATUS.md` F7/F8,
+  `installers/README.md`.
+
 # Density energy gate: full-spectrum region basis + non-harmonic terminology (2026-05-29)
 
 Resolves the "band-vs-peak" inconsistency between the inharmonic density weight

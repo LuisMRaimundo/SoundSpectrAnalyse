@@ -1,6 +1,6 @@
 # main.py — launcher shim (no PyQt)
 #
-# Supported workflows after the Stage 1 / Stage 2 refactor:
+# Supported workflows after the Stage 1 / Stage 2 / Stage 3 pipeline:
 #   - Full CLI pipeline:        python run_orchestrator.py
 #   - Windows Tk file picker:   run.bat -> pipeline_orchestrator_gui.py
 #   - Tk via integrated entry:  python pipeline_orchestrator_integrated.py --gui
@@ -20,7 +20,7 @@ def main() -> int:
     integrated = root / "pipeline_orchestrator_integrated.py"
     print(
         "main.py: launching the file-picker GUI.\n"
-        "Full pipeline (Stage 1 + Stage 2): python run_orchestrator.py\n",
+        "Full pipeline (Stage 1 + Stage 2 + Stage 3): python run_orchestrator.py\n",
         file=sys.stderr,
         end="",
     )

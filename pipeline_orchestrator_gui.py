@@ -1,10 +1,11 @@
 ﻿"""
 SoundSpectrAnalyse - standalone Tk file-picker GUI.
 
-This GUI exposes the canonical two-stage pipeline:
+This GUI exposes the canonical three-stage pipeline:
 
     Stage 1: Per-note spectral analysis (``proc_audio.AudioProcessor``)
     Stage 2: Compilation (``compile_metrics.compile_density_metrics_with_pca``)
+    Stage 3: Research export + EWSD-R v18 (``post_compile_research_export``)
 
 Component energy ratios are derived from the *current* spectral analysis only.
 No external H/I/S percentages, no preprocessing stage and no external
@@ -1666,8 +1667,9 @@ class RobustOrchestratorApp:
         log.info(f"STARTING PROCESSING OF {total} FOLDER(S)")
         log.info("=" * 80)
         log.info(
-            "Each folder runs the two-stage pipeline: "
-            "Stage 1 (per-note spectral analysis) then Stage 2 (compilation)."
+            "Each folder runs the three-stage pipeline: "
+            "Stage 1 (per-note spectral analysis), Stage 2 (compilation), "
+            "Stage 3 (research export + EWSD)."
         )
         log.info("=" * 80)
         folder_summaries: List[Dict[str, Any]] = []
@@ -1686,6 +1688,10 @@ class RobustOrchestratorApp:
             log.info("  1. Stage 1: Per-note spectral analysis (proc_audio)")
             log.info(
                 "  2. Stage 2: Compilation (compiled_density_metrics.xlsx)"
+            )
+            log.info(
+                "  3. Stage 3: Research export + EWSD "
+                "(compiled_density_metrics_research.xlsx)"
             )
             log.info("=" * 80)
             
@@ -1800,7 +1806,7 @@ class RobustOrchestratorApp:
         *,
         enable_adaptive_path_randomization: bool = False,
     ) -> None:
-        """Run the two-stage pipeline on a single folder.
+        """Run the three-stage pipeline on a single folder.
 
         Stage 1: per-note spectral analysis via
         :class:`proc_audio.AudioProcessor`. One ``spectral_analysis.xlsx``

@@ -110,6 +110,41 @@
       "sheet_or_export": "compiled Density_Metrics / research Spectral_Density_Metrics",
       "citation": "implementation-defined"
     },
+    "EWSD_score_total": {
+      "status": "canonical",
+      "phase": "phase_11",
+      "description": "Strict Effective Weighted Spectral Density (EWSD-R v18): sum over H/I/S compartments of (analysis_ratio * weighted_band_sum * N_eff/N). Recomputed in Stage 3 from per-note component spectra; requires Harmonic + Inharmonic sheets. NaN when per-note workbooks are absent.",
+      "sheet_or_export": "research Spectral_Density_Metrics only",
+      "citation": "implementation-defined; anti-concentration companion to note_density_final"
+    },
+    "EWSD_score_acoustic_balanced": {
+      "status": "canonical",
+      "phase": "phase_11",
+      "description": "Acoustic-balanced EWSD companion: same inputs as EWSD_score_total but concentration penalty exponent alpha=0.5. Preferred for cross-instrument bibliographic distance.",
+      "sheet_or_export": "research Spectral_Density_Metrics only",
+      "citation": "implementation-defined"
+    },
+    "ewsd_primary_analysis_eligible": {
+      "status": "validation",
+      "phase": "phase_11",
+      "description": "Thesis safety gate for EWSD rows: True only for individual_exact mode, H/I/S ratios summing to ~1, finite EWSD, positive component count, no warning, parsed note, and thesis-safe weight function.",
+      "sheet_or_export": "research Spectral_Density_Metrics only",
+      "citation": "implementation-defined"
+    },
+    "ewsd_merge_status": {
+      "status": "validation",
+      "phase": "phase_11",
+      "description": "Stage 3 merge provenance token (merged_individual_exact, no_per_note_workbooks_found, note_not_in_ewsd_output, ewsd_computation_failed).",
+      "sheet_or_export": "research Spectral_Density_Metrics only",
+      "citation": "implementation-defined"
+    },
+    "ewsd_stage3_version": {
+      "status": "validation",
+      "phase": "phase_11",
+      "description": "Embedded EWSD core version tag (currently EWSD-R v18).",
+      "sheet_or_export": "research Spectral_Density_Metrics only",
+      "citation": "implementation-defined"
+    },
     "density_weights_source": {
       "status": "validation",
       "phase": "phase_2",

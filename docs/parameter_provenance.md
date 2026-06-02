@@ -4,6 +4,8 @@ This ledger lists every numeric constant in `constants.py` and numeric defaults 
 
 > **Current-state note (2026-05-27):** for constants exported by `constants.py`, the canonical provenance source is now `docs/CONSTANTS_PROVENANCE.md` (with explicit `primary_source` / `derived` / `convention` / `internal_default` classes). This file is retained as a historical Phase-6 ledger and for signature-default tracking.
 
+> **Stage 3 EWSD note (2026-06-02):** EWSD-R v18 defaults (`ACOUSTIC_BALANCE_ALPHA_DEFAULT = 0.5`, `ratio_source = auto_excel_required`, `include_ewsd = True`) live in `tools/ewsd_core.py` and `tools/ewsd_research_integration.py`. See `docs/TECHNICAL_MANUAL_COMPLETE.md` §7.8 and `docs/DENSITY_EXPORT_SCHEMA.md` §R.4.
+
 Columns: `canonical_name` | `current_value` | `acoustic_meaning` | `source_or_status` | `qualitative_stability_range` | `stability_test_file`
 
 ## Constants (`constants.py`)

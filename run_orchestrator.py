@@ -7,6 +7,7 @@ SoundSpectrAnalyse - Pipeline Entry Point
 Pipeline:
     Stage 1: Per-note spectral analysis (proc_audio.AudioProcessor)
     Stage 2: Compilation (per-note spectral_analysis.xlsx -> compiled workbook)
+    Stage 3: Research export + EWSD-R v18 merge (compiled_density_metrics_research.xlsx)
 
 Usage:
     python run_orchestrator.py                          # all .wav in cwd
@@ -64,7 +65,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
             "SoundSpectrAnalyse pipeline - Stage 1 (per-note spectral "
-            "analysis) followed by Stage 2 (compilation)."
+            "analysis), Stage 2 (compilation), Stage 3 (research export + EWSD)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -151,8 +152,8 @@ def main() -> int:
     )
     print(
         "Pipeline: Stage 1 (per-note spectral analysis) -> "
-        "Stage 2 (compilation). Component energy ratios are computed "
-        "from the current analysis."
+        "Stage 2 (compilation) -> Stage 3 (research export + EWSD). "
+        "Component energy ratios are computed from the current analysis."
     )
 
     try:
