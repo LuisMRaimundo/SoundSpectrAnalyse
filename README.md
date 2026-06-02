@@ -9,7 +9,7 @@ SoundSpectrAnalyse is a spectral-analysis pipeline developed in support of docto
 
 ## Status
 
-- **Version**: 3.9.0.
+- **Version**: 4.0.0.
 - **Python**: >=3.10,<3.12.
 - **Development status**: Beta.
 - **License**: Proprietary — see `LICENSE` at the repository root.
@@ -110,7 +110,7 @@ Column-level documentation is provided in [`docs/EXPORT_COLUMN_DICTIONARY.md`](d
 | How much GUI-weighted H/I/S content? | **`note_density_final`** | 2 / research |
 | Cross-instrument comparative density | **`EWSD_score_acoustic_balanced`** ± CI | 3 (research) |
 
-Practical lookup steps: [`docs/validation/NOTE_FATNESS_AND_DENSITY_GUIDE.md`](docs/validation/NOTE_FATNESS_AND_DENSITY_GUIDE.md). Theory memo: [`docs/validation/EWSD_THEORY.md`](docs/validation/EWSD_THEORY.md).
+Practical lookup steps: [`docs/validation/NOTE_FATNESS_AND_DENSITY_GUIDE.md`](docs/validation/NOTE_FATNESS_AND_DENSITY_GUIDE.md). Schema audit repairs (v4.0): [`docs/validation/EXPORT_SCHEMA_AUDIT_REPAIR.md`](docs/validation/EXPORT_SCHEMA_AUDIT_REPAIR.md). Theory memo: [`docs/validation/EWSD_THEORY.md`](docs/validation/EWSD_THEORY.md).
 
 Stage 3 validation evidence (v18.1): pure reference math (`tools/ewsd_pure.py`), golden vectors, 49-note corpus regression, bootstrap UQ (`tools/ewsd_uncertainty.py`), sensitivity report (`tools/ewsd_sensitivity_report.py`), construct validity doc, CI gate in `.github/workflows/ci.yml`.
 

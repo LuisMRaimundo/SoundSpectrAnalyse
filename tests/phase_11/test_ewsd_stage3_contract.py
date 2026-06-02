@@ -46,7 +46,7 @@ def test_assess_stage3_failed_when_no_workbooks() -> None:
 
 
 def test_fail_closed_raises_on_missing_workbooks() -> None:
-    diag = build_stage3_diagnostics(
+    diag, summary = build_stage3_diagnostics(
         pd.DataFrame({"Note": ["D3"], "ewsd_merge_status": ["no_per_note_workbooks_found"]}),
         analysis_root="/tmp",
         frequency_ceiling_hz=20000.0,
@@ -55,6 +55,7 @@ def test_fail_closed_raises_on_missing_workbooks() -> None:
     result = Stage3MergeResult(
         pd.DataFrame({"Note": ["D3"]}),
         diag,
+        summary,
         STAGE3_STATUS_FAILED,
         ("no workbooks",),
     )

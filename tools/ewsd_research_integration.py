@@ -384,8 +384,10 @@ def merge_ewsd_stage3(
     """Left-join EWSD into ``Spectral_Density_Metrics`` with diagnostics."""
     if not include_ewsd or sd is None or sd.empty or "Note" not in sd.columns:
         empty = sd if sd is not None else pd.DataFrame()
-        diag = build_stage3_diagnostics(empty, analysis_root="", frequency_ceiling_hz=None, n_workbooks=0)
-        return Stage3MergeResult(empty, diag, STAGE3_STATUS_OK, tuple(warnings))
+        diag, diag_summary = build_stage3_diagnostics(
+            empty, analysis_root="", frequency_ceiling_hz=None, n_workbooks=0
+        )
+        return Stage3MergeResult(empty, diag, diag_summary, STAGE3_STATUS_OK, tuple(warnings))
 
     analysis_root = Path(compiled_workbook).expanduser().resolve().parent
     freq_ceiling = _first_finite_from_frame(
@@ -443,7 +445,7 @@ def merge_ewsd_stage3(
             )
 
     n_workbooks = len(discover_individual_exact_workbooks(analysis_root))
-    diagnostics = build_stage3_diagnostics(
+    diagnostics, diagnostics_summary = build_stage3_diagnostics(
         out,
         analysis_root=str(analysis_root),
         frequency_ceiling_hz=freq_ceiling,
@@ -455,7 +457,7 @@ def merge_ewsd_stage3(
         global_status=global_status,
         messages=stage_messages,
     )
-    result = Stage3MergeResult(out, diagnostics, status, tuple(stage_messages))
+    result = Stage3MergeResult(out, diagnostics, diagnostics_summary, status, tuple(stage_messages))
     if fail_closed:
         enforce_fail_closed(result)
     return result

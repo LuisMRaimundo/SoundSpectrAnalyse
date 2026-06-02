@@ -44,7 +44,7 @@ COMPILED_SHEETS = {
     "Canonical_Metrics",
     "Density_Metrics",
     "Spectral_Density_Metrics",
-    "Primary_Statistics_Filtered",
+    "Primary_Statistics_Eligible",
     "Canonical_Primary_Filtered",
     "Diagnostic_Metrics",
 }

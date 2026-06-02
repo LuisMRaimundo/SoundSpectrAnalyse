@@ -983,6 +983,24 @@ def _finalize_analysis_metadata_for_workbook(
     if meta.get("harmonic_tolerance") is None:
         meta["harmonic_tolerance"] = "not_available_at_compile_stage"
 
+    if base_df is not None and not base_df.empty:
+        meta["sample_row_count"] = int(len(base_df))
+        if "Note" in base_df.columns:
+            _notes = base_df["Note"].astype(str).str.strip()
+            meta["unique_note_label_count"] = int(_notes.nunique())
+            meta["duplicate_note_label_count"] = int(_notes.duplicated(keep=False).sum())
+        if "MIDI" in base_df.columns:
+            _midi = pd.to_numeric(base_df["MIDI"], errors="coerce")
+            meta["unique_midi_count"] = int(_midi.nunique()) if _midi.notna().any() else 0
+        meta["notes_count_semantics"] = (
+            "sample_row_count counts compiled rows; unique_midi_count counts distinct MIDI values"
+        )
+        meta["primary_subset_policy"] = (
+            "Canonical_Primary_Filtered / Primary_Statistics_Eligible include rows with "
+            "valid_for_primary_statistics and is_primary_comparable_profile; qc_status warnings "
+            "do not exclude unless valid_for_primary_statistics is False"
+        )
+
     # Dissonance cap summary (batch / workbook level)
     if base_df is not None and not base_df.empty and "dissonance_partial_count_before_cap" in base_df.columns:
         b = pd.to_numeric(base_df["dissonance_partial_count_before_cap"], errors="coerce")
@@ -1920,6 +1938,12 @@ def _compute_weighted_density_columns_for_wide_df(
     if full_nan_per_note_mask.any():
         raw_per_note = raw_per_note.mask(full_nan_per_note_mask)
     out["density_metric_raw_per_note_balance"] = raw_per_note
+    out["density_raw_phase2_profile_weighted"] = out["density_metric_raw"]
+    out["density_component_ratio_weighted_sum"] = out["density_metric_raw_per_note_balance"]
+    if use_phase2_profile:
+        out["phase2_harmonic_application_weight"] = float(harmonic_weight)
+        out["phase2_inharmonic_application_weight"] = float(inharmonic_weight)
+        out["phase2_subbass_application_weight"] = float(subbass_weight)
 
     arr = raw.to_numpy(dtype=float, copy=False)
     finite_pos = arr[np.isfinite(arr) & (arr > 0)]
@@ -4505,6 +4529,8 @@ def _build_density_metrics_sheet_from_per_note_files(
     wf = (weight_function or "").strip().lower() or "linear"
     if wf == "sum":
         wf = "linear"
+    from export_row_identity import compute_sample_id
+
     use_phase2_profile = (
         harmonic_weight is not None
         and inharmonic_weight is not None
@@ -4696,6 +4722,11 @@ def _build_density_metrics_sheet_from_per_note_files(
         # populated after the per-note loop with the corpus-wide max.
         row = {
             "Note": note,
+            "sample_id": compute_sample_id(
+                note=str(note),
+                source_file_name=fpath.name,
+                row_index=len(rows),
+            ),
             # === CANONICAL ANSWERS (read these first) ====================
             #   density_metric_raw       = D_H*w_H + D_I*w_I + D_S*w_S
             #   density_metric_normalized = density_metric_raw / max(raw)
@@ -4890,8 +4921,10 @@ def _build_density_metrics_sheet_from_per_note_files(
                 info.get("harmonic_amplitude_source", "")
             ),
             # === STAGE 2 WEIGHTED NOTE-DENSITY (weight_function-aware) =====
-            # density_weighted_sum  = D_H*w_H + D_I*w_I + D_S*w_S (same
-            #   band D values as density_metric_raw / harmonic_density_sum).
+            # density_weighted_sum  = D_H*r_H + D_I*r_I + D_S*r_S using per-note
+            #   component_*_energy_ratio (same as density_metric_raw_per_note_balance).
+            # density_metric_raw      = D_H*w_H + D_I*w_I + D_S*w_S using phase-2 profile
+            #   when available (see density_weights_source).
             # density_log_weighted  = log10(1 + density_weighted_sum).
             # harmonic_amplitude_sum remains a linear diagnostic only.
             "inharmonic_amplitude_sum": i_amp,
@@ -4922,9 +4955,20 @@ def _build_density_metrics_sheet_from_per_note_files(
                 info.get("weighted_inharmonic_component")
             ),
             "weighted_subbass_component": _f(info.get("weighted_subbass_component")),
-            "density_weighted_sum": _f(info.get("density_weighted_sum")),
-            "density_weighted_sum_alias_of": "density_metric_raw",
-            "density_weighted_sum_semantic_status": "legacy_alias_not_independent",
+            "density_weighted_sum": raw_per_note,
+            "density_weighted_sum_alias_of": "density_metric_raw_per_note_balance",
+            "density_weighted_sum_semantic_status": "component_ratio_weighted_log_density",
+            "density_raw_phase2_profile_weighted": raw,
+            "density_component_ratio_weighted_sum": raw_per_note,
+            **(
+                {
+                    "phase2_harmonic_application_weight": float(harmonic_weight),
+                    "phase2_inharmonic_application_weight": float(inharmonic_weight),
+                    "phase2_subbass_application_weight": float(subbass_weight),
+                }
+                if use_phase2_profile
+                else {}
+            ),
             "density_log_weighted": _f(info.get("density_log_weighted")),
             "density_log_formula": str(
                 info.get("density_log_formula", "log10(1 + density_weighted_sum)")
@@ -5400,21 +5444,18 @@ def _build_density_metrics_main_sheet(
 
 
 def _enrich_compiled_metadata_from_df(metadata: Dict[str, Any], df: pd.DataFrame) -> Dict[str, Any]:
-    """Fill analysis_* keys from the first row of compiled metrics when per-note columns were merged in."""
+    """Fill analysis_* keys from compiled metadata; never promote row-0 per-note weights globally."""
     meta = dict(metadata)
     if df is None or df.empty:
         return meta
     row = df.iloc[0]
     pick = lambda k: row[k] if k in df.columns and pd.notna(row[k]) else None  # noqa: E731
     meta.setdefault("window", pick("window") or pick("Window"))
-    meta.setdefault("n_fft", pick("N FFT"))
-    meta.setdefault("hop_length", pick("Hop Length"))
-    meta.setdefault("harmonic_tolerance", pick("Tolerance (Hz)") or pick("Search Band (cents)"))
-    meta.setdefault("snr_threshold_db", pick("SNR Threshold (dB)"))
+    meta.setdefault("n_fft", pick("N FFT") or pick("n_fft") or pick("n_fft_effective"))
+    meta.setdefault("hop_length", pick("Hop Length") or pick("hop_length"))
+    meta.setdefault("harmonic_tolerance", pick("Tolerance (Hz)") or pick("Search Band (cents)") or pick("harmonic_tolerance"))
+    meta.setdefault("snr_threshold_db", pick("SNR Threshold (dB)") or pick("snr_threshold_db"))
     meta.setdefault("density_summation_mode", pick("density_summation_mode"))
-    meta.setdefault("harmonic_density_weight", pick("harmonic_density_weight"))
-    meta.setdefault("inharmonic_density_weight", pick("inharmonic_density_weight"))
-    meta.setdefault("subbass_density_weight", pick("subbass_density_weight"))
     meta.setdefault("density_salience_threshold_db", pick("density_salience_threshold_db"))
     meta.setdefault("density_frequency_ceiling_hz", pick("density_frequency_ceiling_hz"))
     meta.setdefault("frequency_min_hz", pick("frequency_min_hz"))
@@ -5428,6 +5469,23 @@ def _enrich_compiled_metadata_from_df(metadata: Dict[str, Any], df: pd.DataFrame
     meta.setdefault("smoothing_enabled", None)
     meta.setdefault("spectral_masking_enabled", False)
     meta.setdefault("density_formula", DENSITY_FORMULA_DOC)
+    # Phase-2 application profile (corpus-level) — never copy per-note component ratios here.
+    meta.setdefault(
+        "phase2_harmonic_application_weight",
+        meta.get("harmonic_weight") or pick("phase2_harmonic_application_weight"),
+    )
+    meta.setdefault(
+        "phase2_inharmonic_application_weight",
+        meta.get("inharmonic_weight") or pick("phase2_inharmonic_application_weight"),
+    )
+    meta.setdefault(
+        "phase2_subbass_application_weight",
+        meta.get("subbass_weight") or pick("phase2_subbass_application_weight"),
+    )
+    meta["harmonic_density_weight_metadata_semantics"] = (
+        "use phase2_harmonic_application_weight for corpus profile; "
+        "component_harmonic_energy_ratio for per-note observed ratios"
+    )
     return meta
 
 
@@ -6632,6 +6690,27 @@ def _write_compiled_excel(
         inharmonic_weight=inharmonic_weight,
         subbass_weight=subbass_weight,
     )
+    from export_row_identity import assign_sample_ids as _assign_sample_ids
+
+    density_df = _assign_sample_ids(density_df)
+    if (
+        not base_df.empty
+        and "Note" in base_df.columns
+        and "Note" in density_df.columns
+        and "sample_id" in density_df.columns
+        and "sample_id" not in base_df.columns
+        and "compilation_error" not in density_df.columns
+    ):
+        _sid_cols = ["sample_id", "Note"]
+        if "source_file_name" in density_df.columns and "source_file_name" in base_df.columns:
+            _sid_cols.append("source_file_name")
+            _map = density_df[[c for c in _sid_cols]].drop_duplicates(subset=_sid_cols)
+            base_df = base_df.merge(_map, on=[c for c in _sid_cols if c != "sample_id"], how="left")
+        elif "Note" in base_df.columns and not base_df["Note"].duplicated().any():
+            _map = density_df[["Note", "sample_id"]].drop_duplicates()
+            base_df = base_df.merge(_map, on="Note", how="left")
+        else:
+            base_df = _assign_sample_ids(base_df)
     _strip = dissonance_columns_present_in_density_sheet(density_df)
     if _strip:
         logger.warning("Removing dissonance-like columns from Density_Metrics: %s", _strip)
@@ -6663,7 +6742,10 @@ def _write_compiled_excel(
         "density_metric_raw",
         "density_metric_normalized",
         "density_metric_raw_per_note_balance",
+        "density_raw_phase2_profile_weighted",
+        "density_component_ratio_weighted_sum",
         "density_weighted_sum",
+        "sample_id",
     )
     if (
         not base_df.empty
@@ -6674,8 +6756,29 @@ def _write_compiled_excel(
     ):
         _take = [c for c in _CANONICAL_DENSITY_COLS_TO_PROPAGATE if c in density_df.columns]
         if _take:
-            _auth = density_df[["Note"] + _take].groupby("Note", as_index=False).last()
-            base_df = base_df.merge(_auth, on="Note", how="left", suffixes=("", "__canon"))
+            _merge_keys = (
+                ["sample_id"]
+                if "sample_id" in base_df.columns
+                and "sample_id" in density_df.columns
+                and base_df["sample_id"].astype(str).str.strip().ne("").all()
+                else ["Note"]
+            )
+            if _merge_keys == ["Note"] and base_df["Note"].duplicated().any():
+                logger.warning(
+                    "Duplicate Note keys in compiled frame; density reconciliation may "
+                    "collapse rows — prefer sample_id joins (re-export after schema v4.0)."
+                )
+            _auth_cols = list(dict.fromkeys(_merge_keys + _take))
+            _auth = density_df[_auth_cols].copy()
+            if _merge_keys == ["sample_id"]:
+                _auth = _auth.drop_duplicates(subset=["sample_id"])
+                _take_cols = [c for c in _take if c != "sample_id"]
+            else:
+                _take_cols = list(_take)
+            if _merge_keys == ["Note"]:
+                _auth = _auth.groupby("Note", as_index=False).last()
+            _auth = _auth[_merge_keys + _take_cols]
+            base_df = base_df.merge(_auth, on=_merge_keys, how="left", suffixes=("", "__canon"))
             _reconciled = []
             for _c in _take:
                 _ck = f"{_c}__canon"
@@ -6948,6 +7051,18 @@ def _write_compiled_excel(
                     "density_metric_raw": "diagnostic_density_metric_raw",
                     "density_metric_normalized": "diagnostic_density_metric_normalized",
                     "density_weighted_sum": "diagnostic_density_weighted_sum",
+                    "density_metric_raw_per_note_balance": "diagnostic_density_metric_raw_per_note_balance",
+                    "harmonic_energy_sum": "diagnostic_harmonic_energy_sum_raw_power",
+                    "inharmonic_energy_sum": "diagnostic_inharmonic_energy_sum_raw_power",
+                    "subbass_energy_sum": "diagnostic_subbass_energy_sum_raw_power",
+                    "subbass_component_energy_sum": "diagnostic_subbass_component_energy_sum_raw_power",
+                    "harmonic_full_spectrum_energy_sum_20khz": "diagnostic_harmonic_full_spectrum_energy_sum_20khz_raw",
+                    "inharmonic_full_spectrum_energy_sum_20khz": "diagnostic_inharmonic_full_spectrum_energy_sum_20khz_raw",
+                    "density_full_spectrum_weighted_sum_20khz": "diagnostic_density_full_spectrum_weighted_sum_20khz_raw",
+                    "spectral_extension_index_20khz": "diagnostic_spectral_extension_index_20khz_raw",
+                    "harmonic_density_weight": "per_note_harmonic_energy_ratio_diagnostic",
+                    "inharmonic_density_weight": "per_note_inharmonic_energy_ratio_diagnostic",
+                    "subbass_density_weight": "per_note_subbass_energy_ratio_diagnostic",
                 }
                 _present_ren = {k: v for k, v in _diag_ren.items() if k in _diag.columns}
                 if _present_ren:

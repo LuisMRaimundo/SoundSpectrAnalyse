@@ -43,6 +43,7 @@ class EwsdMergeIncomplete(EwsdStage3Error):
 class Stage3MergeResult:
     spectral_density_metrics: pd.DataFrame
     diagnostics: pd.DataFrame
+    diagnostics_summary: pd.DataFrame
     status: str
     messages: tuple[str, ...] = field(default_factory=tuple)
 
@@ -57,19 +58,23 @@ def build_stage3_diagnostics(
     analysis_root: str,
     frequency_ceiling_hz: Optional[float],
     n_workbooks: int,
-) -> pd.DataFrame:
-    """Summarise per-note Stage 3 merge outcomes for the research workbook."""
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Summarise per-note Stage 3 merge outcomes; summary row is a separate metadata frame."""
+    empty_note = pd.DataFrame(
+        columns=[
+            "Note",
+            "ewsd_merge_status",
+            "ewsd_primary_analysis_eligible",
+            "EWSD_score_acoustic_balanced",
+            "ewsd_uncertainty_sources",
+            "stage3_issue",
+        ]
+    )
+    empty_summary = pd.DataFrame(
+        columns=["stage3_status_row", "ewsd_stage3_version", "stage3_issue"]
+    )
     if sd is None or sd.empty or "Note" not in sd.columns:
-        return pd.DataFrame(
-            columns=[
-                "Note",
-                "ewsd_merge_status",
-                "ewsd_primary_analysis_eligible",
-                "EWSD_score_acoustic_balanced",
-                "ewsd_uncertainty_sources",
-                "stage3_issue",
-            ]
-        )
+        return empty_note, empty_summary
 
     rows: list[dict[str, object]] = []
     for _, row in sd.iterrows():
@@ -96,11 +101,8 @@ def build_stage3_diagnostics(
     meta = pd.DataFrame(
         [
             {
-                "Note": "__STAGE3_SUMMARY__",
-                "ewsd_merge_status": "",
-                "ewsd_primary_analysis_eligible": False,
-                "EWSD_score_acoustic_balanced": np.nan,
-                "ewsd_uncertainty_sources": SCRIPT_VERSION,
+                "stage3_status_row": "__STAGE3_SUMMARY__",
+                "ewsd_stage3_version": SCRIPT_VERSION,
                 "stage3_issue": (
                     f"analysis_root={analysis_root}; "
                     f"frequency_ceiling_hz={frequency_ceiling_hz}; "
@@ -109,7 +111,7 @@ def build_stage3_diagnostics(
             }
         ]
     )
-    return pd.concat([meta, summary], ignore_index=True)
+    return summary, meta
 
 
 def assess_stage3_merge_result(

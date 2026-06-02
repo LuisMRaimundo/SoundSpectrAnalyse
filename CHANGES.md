@@ -1,3 +1,14 @@
+# Export schema audit repair (v4.0.0)
+
+Fixes architecture-level workbook incongruences (audit 2026-06):
+
+- **`sample_id`** primary join key; duplicate `Note` labels no longer collapse on merge when `sample_id` is present.
+- **Density semantics:** `density_raw_phase2_profile_weighted`, `density_component_ratio_weighted_sum`, research `richness_weighted_body_density`; corrected `density_weighted_sum_alias_of`.
+- **Weights:** `phase2_*_application_weight` vs `component_*_energy_ratio`; metadata no longer promotes row-0 per-note weights globally.
+- **Diagnostic_Metrics:** prefixed collision columns (`diagnostic_*_raw_power`, etc.).
+- **Research:** `Primary_Statistics_Eligible`, `Stage3_Summary` (note-only `Stage3_Diagnostics`), dedupe identical `_2` merge columns, clarified row counts.
+- **Doc:** `docs/validation/EXPORT_SCHEMA_AUDIT_REPAIR.md`.
+
 # Documentation sweep — v3.9.0 metric hierarchy and fatness guide (2026-06-02)
 
 Aligns user-facing docs with EWSD v18.1 Tier A–C and the acoustic fatness scalar:

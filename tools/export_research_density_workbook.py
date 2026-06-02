@@ -58,6 +58,7 @@ from metadata_sanitizer import (
     publication_research_canonical_density_columns,
 )
 from constants import BODY_DENSITY_MAX_HZ, FULL_SPECTRUM_MAX_HZ
+from export_row_identity import assign_sample_ids, dedupe_identical_columns, primary_merge_keys
 
 SCRIPT_NAME = "export_research_density_workbook.py"
 SCRIPT_VERSION = "1.1.2"
@@ -316,6 +317,7 @@ def merge_workbook_frames(path: Path, warnings: List[str]) -> pd.DataFrame:
         raise ValueError("Required sheet 'Density_Metrics' has no 'Note' column.")
     merged = _rename_frame_to_canonical(density_raw.rename(columns={density_nc: note_key}))
     merged = merged.reset_index(drop=True).copy()
+    merged = assign_sample_ids(merged)
     merged["__source_density_row_id"] = np.arange(len(merged), dtype=int)
 
     for sheet in MERGE_SHEETS:
@@ -334,11 +336,24 @@ def merge_workbook_frames(path: Path, warnings: List[str]) -> pd.DataFrame:
             continue
         frame = raw.rename(columns={nc: note_key})
         frame = _rename_frame_to_canonical(frame)
-        if frame.duplicated(subset=[note_key]).any():
-            # Prevent cartesian expansion in Spectral_Density_Metrics.
+        frame = assign_sample_ids(frame)
+        merge_keys = primary_merge_keys(merged)
+        if merge_keys == ["sample_id"] and "sample_id" not in frame.columns:
+            if frame.duplicated(subset=[note_key]).any():
+                warnings.append(
+                    f"Sheet '{sheet}' lacks sample_id and has duplicate Note keys; "
+                    "skipping merge to avoid G#4-style row collision."
+                )
+                continue
+            merge_keys = [note_key]
+        if merge_keys == [note_key] and frame.duplicated(subset=[note_key]).any():
+            warnings.append(
+                f"Sheet '{sheet}': duplicate Note keys without sample_id — "
+                "last row wins (unsafe for duplicate pitch labels)."
+            )
             frame = frame.groupby(note_key, as_index=False, sort=False).last()
         # Left merge anchored to Density_Metrics row cardinality.
-        merged = merged.merge(frame, on=note_key, how="left", suffixes=("", "_y"))
+        merged = merged.merge(frame, on=merge_keys, how="left", suffixes=("", "_y"))
         drop_y: List[str] = []
         for col in list(merged.columns):
             if not col.endswith("_y"):
@@ -1907,7 +1922,7 @@ def build_spectral_density_metrics(
                 "Run-parameter comparability warning: "
                 f"{_pp_total - _pp_true}/{_pp_total} note rows are not in the primary "
                 "comparable profile (wf=log, threshold/ceiling runtime-configured). "
-                "Use Primary_Statistics_Filtered for thesis-grade primary statistics."
+                "Use Primary_Statistics_Eligible for thesis-grade primary statistics."
             )
 
     out = out.sort_values("MIDI", na_position="last", kind="mergesort")
@@ -2273,7 +2288,32 @@ def build_metadata_rows(
         return np.nan
 
     def mget_required(*keys: str) -> Any:
+        weight_keys = {
+            "harmonic_density_weight",
+            "inharmonic_density_weight",
+            "subbass_density_weight",
+        }
         for k in keys:
+            if k in weight_keys:
+                for phase2_key in (
+                    "phase2_harmonic_application_weight",
+                    "phase2_inharmonic_application_weight",
+                    "phase2_subbass_application_weight",
+                    "harmonic_weight",
+                    "inharmonic_weight",
+                    "subbass_weight",
+                ):
+                    v = mget(phase2_key)
+                    if isinstance(v, str):
+                        vv = v.strip()
+                        if vv and vv.lower() not in {
+                            "not_available_at_compile_stage",
+                            "not available at compile stage",
+                            "unavailable_not_recorded",
+                        }:
+                            return v
+                    elif pd.notna(v):
+                        return v
             v = mget(k)
             if isinstance(v, str):
                 vv = v.strip()
@@ -2283,11 +2323,6 @@ def build_metadata_rows(
                     return v
             elif pd.notna(v):
                 return v
-            if k in sd.columns:
-                s = sd[k]
-                s = s[s.notna()] if isinstance(s, pd.Series) else s
-                if isinstance(s, pd.Series) and not s.empty:
-                    return s.iloc[0]
         return "unavailable_not_recorded"
 
     pitch_range = np.nan
@@ -2429,7 +2464,11 @@ def build_metadata_rows(
         "subbass_density_weight": mget_required("subbass_density_weight"),
         "density_salience_threshold_db": mget_required("density_salience_threshold_db"),
         "density_frequency_ceiling_hz": mget_required("density_frequency_ceiling_hz"),
+        "sample_row_count": len(sd),
+        "unique_midi_count": int(sd["MIDI"].nunique()) if "MIDI" in sd.columns and sd["MIDI"].notna().any() else 0,
+        "unique_note_label_count": int(sd["Note"].astype(str).nunique()) if "Note" in sd.columns else len(sd),
         "notes_count": len(sd),
+        "notes_count_semantics": "sample_row_count (compiled rows), not unique pitch count",
         "pitch_range": pitch_range,
         "harmonic_slot_coverage_ratio_formula": "harmonic_slot_matched_count / harmonic_slot_expected_count",
         "harmonic_region_occupancy_count_definition": (
@@ -2818,7 +2857,7 @@ def _sanitize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Ensure non-blank, unique column names for Excel (duplicates get ``_2``, ``_3``, …).
     """
-    out = df.copy()
+    out = dedupe_identical_columns(df)
     new_names: List[str] = []
     seen_count: Dict[str, int] = {}
     for i, col in enumerate(out.columns):
@@ -3344,12 +3383,17 @@ def build_workbook(
             continue
         _s = pd.to_numeric(sd[_c], errors="coerce")
         if _s.notna().any():
+            sd["richness_weighted_body_density"] = _s
             sd["density_weighted_sum"] = _s
             _dws_selected = _c
             break
     if _dws_selected is not None:
         sd["density_weighted_sum_alias_of"] = _dws_selected
-        sd["density_weighted_sum_semantic_status"] = "body_limited_runtime_ceiling_primary_metric"
+        sd["density_weighted_sum_semantic_status"] = "research_body_ceiling_richness_metric"
+        sd["density_weighted_sum_legacy_compiled_semantics"] = (
+            "compiled workbook density_weighted_sum = density_component_ratio_weighted_sum "
+            "(per-note component ratios); research density_weighted_sum maps body-ceiling richness"
+        )
     # Keep debug/bin/candidate counts out of research-facing sheets.
     for _diag_col in ("harmonic_bin_count", "harmonic_peak_candidate_count"):
         if _diag_col in sd.columns:
@@ -3376,6 +3420,7 @@ def build_workbook(
     )
     apply_per_note_chart_paths(sd, source, merged, warnings)
     stage3_diagnostics = pd.DataFrame()
+    stage3_summary = pd.DataFrame()
     stage3_status = "ok"
     if include_ewsd:
         from tools.ewsd_research_integration import merge_ewsd_stage3
@@ -3390,6 +3435,7 @@ def build_workbook(
         )
         sd = stage3_result.spectral_density_metrics
         stage3_diagnostics = stage3_result.diagnostics
+        stage3_summary = stage3_result.diagnostics_summary
         stage3_status = stage3_result.status
         if stage3_status != "ok":
             warnings.append(f"Stage 3 status: {stage3_status}")
@@ -3779,6 +3825,14 @@ def build_workbook(
             tuple(),
             tuple(stage3_diagnostics.columns),
         )
+    if include_ewsd and stage3_summary is not None and not stage3_summary.empty:
+        _write_data_sheet(
+            wb,
+            "Stage3_Summary",
+            stage3_summary,
+            tuple(),
+            tuple(stage3_summary.columns),
+        )
     sdm_ws = wb["Spectral_Density_Metrics"]
     hdrs = [sdm_ws.cell(1, c).value for c in range(1, sdm_ws.max_column + 1)]
     _hl = [
@@ -3808,15 +3862,9 @@ def build_workbook(
                 }
             ]
         )
-        _write_data_sheet(wb, "Primary_Statistics_Filtered", primary_sd, tuple(), ("primary_statistics_status",))
+        _write_data_sheet(wb, "Primary_Statistics_Eligible", primary_sd, tuple(), ("primary_statistics_status",))
     else:
-        _write_data_sheet(
-            wb,
-            "Primary_Statistics_Filtered",
-            primary_sd,
-            ratio_cols,
-            tuple(metric_cols),
-        )
+        _write_data_sheet(wb, "Primary_Statistics_Eligible", primary_sd, ratio_cols, tuple(metric_cols))
 
     cb_ratios = (
         "component_harmonic_energy_ratio",
