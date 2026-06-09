@@ -3277,6 +3277,21 @@ def extract_density_component_sum(
     return result
 
 
+def _normalize_optional_export_text(raw: Any) -> Optional[str]:
+    """Return stripped text, or None when the source cell is missing/blank."""
+    if raw is None:
+        return None
+    try:
+        if pd.isna(raw):
+            return None
+    except (TypeError, ValueError):
+        pass
+    txt = str(raw).strip()
+    if txt.lower() in ("", "nan", "none", "<na>"):
+        return None
+    return txt
+
+
 def extract_density_components_from_per_note_workbook(
     xlsx_path: Union[str, Path],
     *,
@@ -3629,8 +3644,8 @@ def extract_density_components_from_per_note_workbook(
                     if _src_col is None:
                         continue
                     _raw = _row0.get(_src_col)
-                    _txt = str(_raw).strip() if _raw is not None else ""
-                    if _txt:
+                    _txt = _normalize_optional_export_text(_raw)
+                    if _txt is not None:
                         result[_k] = _txt
                 _f0_final_col = _lower_map.get("f0_final_source")
                 if _f0_final_col is not None:
@@ -3711,8 +3726,8 @@ def extract_density_components_from_per_note_workbook(
                         if _src_col is None:
                             continue
                         _raw = _fit_row.get(_src_col)
-                        _txt = str(_raw).strip() if _raw is not None else ""
-                        if _txt:
+                        _txt = _normalize_optional_export_text(_raw)
+                        if _txt is not None:
                             result[_k] = _txt
             except Exception as _fit_exc:
                 logger.debug("Inharmonicity_Fit fallback read skipped for %s: %s", p, _fit_exc)
@@ -4720,6 +4735,9 @@ def _build_density_metrics_sheet_from_per_note_files(
         # Stage 1/2 amplitude-sum and legacy log-weighted columns.
         # ``density_metric_normalized`` is initialised to NaN and
         # populated after the per-note loop with the corpus-wide max.
+        _inharm_fit_status = _normalize_optional_export_text(
+            info.get("inharmonicity_fit_status")
+        )
         row = {
             "Note": note,
             "sample_id": compute_sample_id(
@@ -5018,8 +5036,8 @@ def _build_density_metrics_sheet_from_per_note_files(
             "inharmonicity_fit_residual_std_cents": _f(
                 info.get("inharmonicity_fit_residual_std_cents")
             ),
-            "inharmonicity_fit_status": str(
-                info.get("inharmonicity_fit_status") or ""
+            "inharmonicity_fit_status": (
+                _inharm_fit_status if _inharm_fit_status is not None else np.nan
             ),
             "inharmonicity_fit_method": str(
                 info.get("inharmonicity_fit_method") or ""
@@ -5176,6 +5194,13 @@ def _build_density_metrics_sheet_from_per_note_files(
                 )
     except Exception as _e_warn:
         logger.debug("sub-bass leakage warning skipped: %s", _e_warn)
+
+    # Phase 7 inharmonicity diagnostics schema: always emit the full column
+    # set even when partial/source-only rows leave status/residual blank.
+    for _col in PHASE7_INHARMONICITY_COMPILED_COLUMNS:
+        if _col not in out_df.columns:
+            out_df[_col] = np.nan
+
     return out_df
 
 
@@ -6273,7 +6298,9 @@ def _classify_compiled_column(col: str) -> str:
 # Sheet presence is preserved by the caller; only the truly empty
 # columns are dropped. The ``Note`` column (row key) is never dropped
 # even if it happens to be empty.
-_DEAD_COLUMN_PROTECTED_NAMES: frozenset[str] = frozenset({"Note", "sample_id"})
+_DEAD_COLUMN_PROTECTED_NAMES: frozenset[str] = frozenset(
+    {"Note", "sample_id", *PHASE7_INHARMONICITY_COMPILED_COLUMNS}
+)
 
 
 def _attach_sample_id_from_density(
