@@ -5,6 +5,9 @@ jobs:
     parameters:
       python-version:
         type: string
+      run-coverage:
+        type: boolean
+        default: false
 
     docker:
       - image: cimg/python:<< parameters.python-version >>
@@ -14,6 +17,7 @@ jobs:
       MPLBACKEND: "Agg"
       QT_QPA_PLATFORM: "offscreen"
       NUMBA_CACHE_DIR: "/tmp/numba_cache"
+      PYTEST_ADDOPTS: "--disable-warnings"
 
     steps:
       - checkout
@@ -35,29 +39,21 @@ jobs:
 
       - restore_cache:
           keys:
-            - v1-pip-{{ arch }}-py<< parameters.python-version >>-{{ checksum "pyproject.toml" }}
-            - v1-pip-{{ arch }}-py<< parameters.python-version >>
+            - v2-pip-{{ arch }}-py<< parameters.python-version >>-{{ checksum "pyproject.toml" }}
+            - v2-pip-{{ arch }}-py<< parameters.python-version >>
 
       - run:
           name: Upgrade pip
-          command: |
-            python -m pip install --upgrade pip setuptools wheel
+          command: python -m pip install --upgrade pip setuptools wheel
 
       - run:
           name: Install Python package and test dependencies
           command: |
-            if [ -f "pyproject.toml" ]; then
-              python -m pip install -e ".[dev]" || python -m pip install -e .
-            fi
-
-            if [ -f "requirements.txt" ]; then
-              python -m pip install -r requirements.txt
-            fi
-
+            python -m pip install -e ".[dev]" || python -m pip install -e .
             python -m pip install pytest pytest-cov
 
       - save_cache:
-          key: v1-pip-{{ arch }}-py<< parameters.python-version >>-{{ checksum "pyproject.toml" }}
+          key: v2-pip-{{ arch }}-py<< parameters.python-version >>-{{ checksum "pyproject.toml" }}
           paths:
             - ~/.cache/pip
 
@@ -65,12 +61,11 @@ jobs:
           name: Run tests
           command: |
             mkdir -p test-results
-            python -m pytest tests -q --junitxml=test-results/junit.xml
-
-      - run:
-          name: Run coverage
-          command: |
-            python -m pytest tests -q --cov=. --cov-report=term-missing
+            if [ "<< parameters.run-coverage >>" = "true" ]; then
+              python -m pytest tests -q --cov=. --cov-report=term-missing --junitxml=test-results/junit.xml
+            else
+              python -m pytest tests -q --junitxml=test-results/junit.xml
+            fi
 
       - store_test_results:
           path: test-results
@@ -79,9 +74,11 @@ workflows:
   test-python:
     jobs:
       - test:
-          name: test-python-3-10
+          name: test-python-3-10-coverage
           python-version: "3.10"
+          run-coverage: true
 
       - test:
           name: test-python-3-11
           python-version: "3.11"
+          run-coverage: false
