@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Optional
 
 import pandas as pd
@@ -24,6 +24,23 @@ __all__ = [
 ]
 
 
+def _source_file_stem(source_file_name: str) -> str:
+    """Basename without extension, independent of host path conventions.
+
+    Source paths may arrive as POSIX (``/dir/sample.wav``) or Windows
+    (``C:\\dir\\sample.wav``) strings regardless of the runtime OS. Normalise
+    separators to ``/`` and parse with :class:`~pathlib.PurePosixPath` so the
+    same logical file yields the same stem on Linux and Windows.
+    """
+    raw = str(source_file_name or "").strip()
+    if not raw:
+        return ""
+    normalized = raw.replace("\\", "/").rstrip("/")
+    if not normalized:
+        return ""
+    return PurePosixPath(normalized).stem
+
+
 def compute_sample_id(
     *,
     note: str,
@@ -31,7 +48,7 @@ def compute_sample_id(
     row_index: int = 0,
 ) -> str:
     """Stable slug for one compiled/research row (handles duplicate Note keys)."""
-    stem = Path(str(source_file_name)).stem if source_file_name else ""
+    stem = _source_file_stem(source_file_name)
     note_s = str(note or "").strip()
     key = f"{note_s}|{stem}|{int(row_index)}"
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
