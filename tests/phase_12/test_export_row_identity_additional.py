@@ -72,12 +72,32 @@ def test_each_identity_bearing_field_changes_the_id() -> None:
 
 
 def test_directory_and_extension_do_not_participate_in_identity() -> None:
-    # Identity uses the source-file STEM (documented Path(...).stem):
-    # directories and extensions are normalised away.
+    # Identity uses the source-file stem (basename without extension).
+    # Directories and extensions must not affect the hash key.
     base = compute_sample_id(note="C4", source_file_name="a.wav", row_index=0)
     assert compute_sample_id(note="C4", source_file_name="runs/a.wav", row_index=0) == base
     assert compute_sample_id(note="C4", source_file_name="C:\\data\\a.wav", row_index=0) == base
     assert compute_sample_id(note="C4", source_file_name="a.aiff", row_index=0) == base
+
+
+@pytest.mark.parametrize(
+    "source_file_name",
+    [
+        "sample.wav",
+        "runs/sample.wav",
+        "/dir/sample.wav",
+        "C:\\folder\\sample.wav",
+        "D:/archive/sample.aiff",
+        "sample.aiff",
+    ],
+)
+def test_cross_platform_path_strings_share_identity_for_same_basename(
+    source_file_name: str,
+) -> None:
+    # POSIX and Windows-style path strings must reduce to the same stem and
+    # therefore the same sample_id when note and row index match.
+    reference = compute_sample_id(note="G3", source_file_name="sample.wav", row_index=2)
+    assert compute_sample_id(note="G3", source_file_name=source_file_name, row_index=2) == reference
 
 
 def test_slug_sanitisation_truncation_and_fallback() -> None:
