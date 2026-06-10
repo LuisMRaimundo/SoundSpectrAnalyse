@@ -349,8 +349,8 @@ def redact_path(value: Any, project_root: Optional[Path] = None) -> Any:
     s = value.strip()
     if not s:
         return value
-    if not (is_absolute_path_like(s) or string_contains_forbidden_local_path(s)):
-        return value
+    # Check project_root first so any absolute path under it (including /tmp/...)
+    # gets the <DATASET_ROOT> prefix regardless of the heuristic patterns below.
     if project_root is not None:
         try:
             p = Path(s)
@@ -365,6 +365,8 @@ def redact_path(value: Any, project_root: Optional[Path] = None) -> Any:
                     pass
         except Exception:
             pass
+    if not (is_absolute_path_like(s) or string_contains_forbidden_local_path(s)):
+        return value
     return REDACT_TOKEN
 
 
