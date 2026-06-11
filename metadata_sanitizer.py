@@ -349,8 +349,6 @@ def redact_path(value: Any, project_root: Optional[Path] = None) -> Any:
     s = value.strip()
     if not s:
         return value
-    if not (is_absolute_path_like(s) or string_contains_forbidden_local_path(s)):
-        return value
     if project_root is not None:
         try:
             p = Path(s)
@@ -365,6 +363,8 @@ def redact_path(value: Any, project_root: Optional[Path] = None) -> Any:
                     pass
         except Exception:
             pass
+    if not (is_absolute_path_like(s) or string_contains_forbidden_local_path(s)):
+        return value
     return REDACT_TOKEN
 
 
