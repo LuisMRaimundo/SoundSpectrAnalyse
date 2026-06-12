@@ -683,10 +683,12 @@ def publication_audio_path_fields(path: Union[str, Path], *, dataset_root: Optio
 
 def publication_output_dir_fields(path: Union[str, Path], *, dataset_root: Optional[Path] = None) -> dict[str, Any]:
     """Publication-safe output directory (relative to corpus root when possible)."""
-    p = Path(str(path))
+    path_text = str(path)
+    is_windows_style = bool(_WIN_ABS_START_EXPORT.match(path_text)) or "\\" in path_text
+    p = PureWindowsPath(path_text) if is_windows_style else Path(path_text)
     if dataset_root is not None:
         try:
-            rel = Path(p).resolve().relative_to(Path(dataset_root).resolve()).as_posix()
+            rel = Path(path_text).resolve().relative_to(Path(dataset_root).resolve()).as_posix()
         except Exception:
             rel = p.name or "output"
     else:
