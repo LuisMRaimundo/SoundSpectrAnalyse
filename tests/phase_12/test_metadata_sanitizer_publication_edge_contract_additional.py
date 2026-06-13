@@ -26,6 +26,12 @@ _POSIX = "/Users/frank/Desktop/project/note.wav"
 _HOME = "/home/grace/data/note.wav"
 _UNC = r"\\server\share\corpus\note.wav"
 
+# Known privacy/export gaps — xfail records them without pinning weak output as contract.
+SUSPICIOUS_CURRENT_BEHAVIOUR = pytest.mark.xfail(
+    reason="Suspicious current behaviour — not a publication-safe contract",
+    strict=False,
+)
+
 
 def _no_user_leaks(blob: str, *names: str) -> None:
     low = blob.lower()
@@ -157,14 +163,8 @@ def test_dataframe_with_nan_path_and_numeric_cells_is_stable() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Windows UNC, path-key fragments, home/username leakage
+# Path-key fragments, home/username leakage (publication-safe contracts)
 # ---------------------------------------------------------------------------
-
-
-def test_unc_windows_path_current_detection_contract() -> None:
-    """UNC ``\\\\server\\share\\...`` is not flagged by ``detect_absolute_local_path`` today."""
-    assert ms.detect_absolute_local_path(_UNC) is False
-    assert ms.redact_path(_UNC) == _UNC
 
 
 @pytest.mark.parametrize(
@@ -189,12 +189,20 @@ def test_detect_private_path_leakage_uses_username_hints(monkeypatch: pytest.Mon
     assert ms.detect_private_path_leakage_fragment(text) is True
 
 
-def test_redact_public_path_leakage_strips_colon_suffixed_windows_tail() -> None:
-    """Colon-partition branch keeps label head when tail looks like an absolute path."""
+@SUSPICIOUS_CURRENT_BEHAVIOUR
+def test_unc_paths_should_be_redacted_for_publication_exports() -> None:
+    """Heuristic gap: UNC host paths must not be treated as publication-safe passthrough."""
+    assert ms.redact_path(_UNC) == ms.REDACT_TOKEN
+    assert ms.detect_absolute_local_path(_UNC) is True
+
+
+@SUSPICIOUS_CURRENT_BEHAVIOUR
+def test_redact_public_path_leakage_should_not_leave_windows_drive_fragments() -> None:
+    """Colon-partition branch must not emit partial host material such as drive letters."""
     leaked = ms.redact_public_path_leakage(r"stored under C:\Users\eve\Desktop\runs")
-    assert leaked == "stored under C"
-    assert ms.detect_absolute_local_path(leaked) is False
-    _no_user_leaks(leaked, "eve", "Desktop")
+    assert leaked in (ms.REDACT_TOKEN, "redacted_local_path")
+    assert ms.string_fails_publication_scan(leaked) is False
+    _no_user_leaks(leaked, "eve", "Desktop", "Users")
 
 
 def test_posix_path_handling_in_export_sanitizer_preserves_basename_only() -> None:
@@ -269,13 +277,14 @@ def test_filter_analysis_meta_rows_publication_clean_is_idempotent() -> None:
     assert once == twice
 
 
-def test_apply_publication_clean_meta_flat_second_pass_coarsens_macos_label() -> None:
-    """Second application maps already-coarse ``macOS`` to ``unknown_platform`` (current)."""
+@SUSPICIOUS_CURRENT_BEHAVIOUR
+def test_apply_publication_clean_meta_flat_should_be_idempotent_on_platform_label() -> None:
+    """Second pass must not degrade an already-coarse platform label."""
     meta = {"platform": "Darwin 21", "density": 0.4, "cwd": _HOME}
     once = ms.apply_publication_clean_meta_flat(meta)
     twice = ms.apply_publication_clean_meta_flat(once)
-    assert once == {"platform": "macOS", "density": pytest.approx(0.4)}
-    assert twice == {"platform": "unknown_platform", "density": pytest.approx(0.4)}
+    assert twice == once
+    assert twice["platform"] == "macOS"
 
 
 def test_sanitize_run_parameters_json_is_idempotent() -> None:
